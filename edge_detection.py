@@ -265,7 +265,6 @@ def process_and_save(algorithm):
 debounce_id = None  # 延迟任务ID
 debounce_delay = 300  # 防抖延迟（毫秒）：滑动停止后300ms再更新
 
-
 # -------------------------- 算法核心函数 --------------------------
 def empty(a):
     pass
@@ -825,7 +824,7 @@ def start_process():
 
 
 def update_result_display():
-    """更新图片处理结果显示"""
+    """更新圖片處理結果顯示"""
     if process_result["img_original"] is None:
         return
 
@@ -853,7 +852,7 @@ def update_result_display():
         # 如果需要填充以保持布局一致，可以创建背景，但这里直接返回缩放图
         return ImageTk.PhotoImage(image=img_pil)
 
-    # 显示图片
+    # 显示圖片
     img_original_tk = cv2_to_tk(process_result["img_original"]) 
     img_edge_tk = cv2_to_tk(process_result["img_edge"]) 
     img_contour_tk = cv2_to_tk(process_result["img_contour"]) 
@@ -874,7 +873,7 @@ def update_result_display():
 
 
 def save_result():
-    """保存图片处理结果"""
+    """保存圖片處理結果"""
     if process_result["img_edge"] is None:
         messagebox.showwarning("警告", "暂无处理结果可保存！")
         return
