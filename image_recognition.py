@@ -135,16 +135,31 @@ def detect_and_classify_cats(image_bgr: np.ndarray,
         return out
     r = results[0]
     boxes = []
+    # try to get class name mapping if available
+    names = getattr(results, 'names', None) or getattr(r, 'names', None)
     if hasattr(r, 'boxes'):
         for b in r.boxes:
             try:
-                cls_val = int(b.cls.cpu().numpy()[0])
-                conf_val = float(b.conf.cpu().numpy()[0])
-                xyxy = b.xyxy.cpu().numpy()[0].astype(int)
+                # extract class id / confidence / xyxy robustly
+                try:
+                    cls_val = int(b.cls.cpu().numpy()[0])
+                except Exception:
+                    cls_val = int(b.cls)
+                try:
+                    conf_val = float(b.conf.cpu().numpy()[0])
+                except Exception:
+                    conf_val = float(b.conf)
+                try:
+                    xyxy = b.xyxy.cpu().numpy()[0].astype(int)
+                except Exception:
+                    xyxy = np.array(b.xyxy).astype(int)
             except Exception:
                 continue
-            # COCO 中 cat 的 class id 为 16（若 detector 使用 COCO 权重）
-            if cls_val == 16:
+            # determine if this box corresponds to a cat: prefer name mapping, fall back to common COCO ids
+            label = None
+            if names is not None and cls_val < len(names):
+                label = str(names[cls_val]).lower()
+            if (label and 'cat' in label) or cls_val in (15, 16):
                 boxes.append((xyxy, conf_val))
 
     h, w = image_bgr.shape[:2]
