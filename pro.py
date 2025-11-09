@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import os
+from ultralytics import YOLO
 
 # -------------------------- 全局参数配置 --------------------------
 frameWidth = 640
@@ -19,10 +20,14 @@ original_label = None
 edge_label = None
 contour_label = None
 metrics_label = None
+root = None  # 全局root实例
 
 # 防抖相关：避免Trackbar滑动时频繁触发处理
 debounce_id = None  # 延迟任务ID
 debounce_delay = 300  # 防抖延迟（毫秒）：滑动停止后300ms再更新
+
+# YOLO模型初始化（加载预训练模型，检测猫用COCO数据集class_id=15）
+yolo_model = YOLO('yolov8n.pt')  # 自动下载轻量级nano模型，速度快适合实时处理
 
 
 # -------------------------- 算法核心函数 --------------------------
@@ -55,8 +60,27 @@ def get_reference_edge(img):
     return reference_edge
 
 
+def calculate_optimal_f1(detected_edge, reference_edge):
+    """计算最优阈值下的F1分数（用于OIS/ODS指标）"""
+    _, reference = cv2.threshold(reference_edge, 127, 255, cv2.THRESH_BINARY)
+    max_f1 = 0.0
+    # 遍历阈值（0-255步长10，平衡效率与精度）
+    for thresh in range(0, 256, 10):
+        _, detected = cv2.threshold(detected_edge, thresh, 255, cv2.THRESH_BINARY)
+        TP = cv2.bitwise_and(detected, reference).sum() // 255
+        FP = cv2.bitwise_and(detected, cv2.bitwise_not(reference)).sum() // 255
+        FN = cv2.bitwise_and(cv2.bitwise_not(detected), reference).sum() // 255
+
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        if f1 > max_f1:
+            max_f1 = f1
+    return round(max_f1, 3)
+
+
 def calculate_metrics(detected_edge, reference_edge):
-    """计算评估指标：Precision、Recall、F1-Score"""
+    """计算评估指标：Precision、Recall、F1-Score、OIS、ODS"""
     _, detected = cv2.threshold(detected_edge, 127, 255, cv2.THRESH_BINARY)
     _, reference = cv2.threshold(reference_edge, 127, 255, cv2.THRESH_BINARY)
 
@@ -68,7 +92,11 @@ def calculate_metrics(detected_edge, reference_edge):
     recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
-    return round(precision, 3), round(recall, 3), round(f1, 3)
+    # OIS（单图最优F1）、ODS（数据集最优F1，单图场景下等同于OIS）
+    ois = calculate_optimal_f1(detected_edge, reference_edge)
+    ods = ois  # 多图/数据集场景可扩展为全局最优，此处适配单图/视频帧处理
+
+    return round(precision, 3), round(recall, 3), round(f1, 3), ois, ods
 
 
 def read_params():
@@ -136,10 +164,21 @@ def process_image_realtime(algorithm):
         img_edge = cv2.Canny(gray_blur, canny_low, canny_high)
 
     elif algorithm == "彩色Canny":
+        # 彩色Canny向量法：计算RGB三通道梯度向量，求L2范数作为梯度幅值
         imgBlur = cv2.GaussianBlur(img, (blur_ksize, blur_ksize), 1)
-        canny_edges = [cv2.Canny(imgBlur[:, :, i], canny_low, canny_high) for i in range(3)]
-        img_edge = cv2.bitwise_or(canny_edges[0], canny_edges[1])
-        img_edge = cv2.bitwise_or(img_edge, canny_edges[2])
+        # 分离通道并计算各通道x/y梯度
+        b, g, r = cv2.split(imgBlur)
+        grads = []
+        for channel in [b, g, r]:
+            dx = cv2.Sobel(channel, cv2.CV_64F, 1, 0, ksize=3)
+            dy = cv2.Sobel(channel, cv2.CV_64F, 0, 1, ksize=3)
+            grads.extend([dx, dy])  # 梯度向量：[dx_b, dy_b, dx_g, dy_g, dx_r, dy_r]
+        # 计算向量L2范数并归一化到0-255
+        grad_mag = np.sqrt(
+            grads[0] ** 2 + grads[1] ** 2 + grads[2] ** 2 + grads[3] ** 2 + grads[4] ** 2 + grads[5] ** 2)
+        grad_mag = cv2.normalize(grad_mag, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        # 应用Canny双阈值和非极大值抑制
+        img_edge = cv2.Canny(grad_mag, canny_low, canny_high)
 
     elif algorithm == "Prewitt":
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -150,27 +189,56 @@ def process_image_realtime(algorithm):
         grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
         img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
 
-    # 膨胀边缘
-    kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
-    img_edge = cv2.dilate(img_edge, kernel, iterations=1)
+    elif algorithm == "YOLO猫检测":
+        # YOLO检测猫（COCO数据集class_id=15，置信度阈值0.5）
+        results = yolo_model(img, conf=0.5)
+        img_edge = img.copy()
+        cat_count = 0
+        # 绘制检测框和标签
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                if box.cls == 15:  # 仅保留猫的检测结果
+                    cat_count += 1
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cv2.rectangle(img_edge, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                    cv2.putText(img_edge, f"Cat {cat_count} ({box.conf[0]:.2f})",
+                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        # YOLO模式下轮廓图复用检测结果图
+        img_contour = img_edge
+        # 计算指标（YOLO模式下边缘指标为0，额外存储猫数量）
+        precision, recall, f1, ois, ods = 0.0, 0.0, 0.0, 0.0, 0.0
+        process_result = {
+            "img_original": img,
+            "img_edge": img_edge,
+            "img_contour": img_contour,
+            "metrics": (precision, recall, f1, ois, ods, cat_count)
+        }
+        update_result_display(algorithm)
+        return
 
-    # 轮廓检测+指标计算
-    img_contour = img.copy()
-    getContours(img_edge, img_contour)
-    precision, recall, f1 = calculate_metrics(img_edge, reference_edge)
+    # 非YOLO算法执行膨胀操作
+    if algorithm != "YOLO猫检测":
+        kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
+        img_edge = cv2.dilate(img_edge, kernel, iterations=1)
 
-    process_result = {
-        "img_original": img,
-        "img_edge": img_edge,
-        "img_contour": img_contour,
-        "metrics": (precision, recall, f1)
-    }
+        # 轮廓检测+指标计算
+        img_contour = img.copy()
+        getContours(img_edge, img_contour)
+        precision, recall, f1, ois, ods = calculate_metrics(img_edge, reference_edge)
 
-    update_result_display()
+        process_result = {
+            "img_original": img,
+            "img_edge": img_edge,
+            "img_contour": img_contour,
+            "metrics": (precision, recall, f1, ois, ods)
+        }
+
+    update_result_display(algorithm)
 
 
 def process_video(algorithm):
-    """处理视频（仍需手动触发，不支持实时参数调整）"""
+    """处理视频（支持YOLO猫检测和传统边缘检测）"""
     global process_result
     cap = cv2.VideoCapture(file_path)
     if not cap.isOpened():
@@ -188,9 +256,10 @@ def process_video(algorithm):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    # 读取一次参数（视频处理时参数固定，不实时更新）
+    # 读取一次参数（视频处理时参数固定）
     blur_ksize, sobel_ksize, canny_low, canny_high, dilate_ksize = read_params()
     metrics_list = []
+    total_cat_count = 0  # YOLO猫检测统计总数
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -198,57 +267,86 @@ def process_video(algorithm):
             break
 
         frame_resized = cv2.resize(frame, (frameWidth, frameHeight))
-        reference_edge = get_reference_edge(frame_resized)
+        img_contour = frame_resized.copy()
 
-        # 算法执行（参数固定）
-        img_edge = None
-        if algorithm == "Sobel":
-            gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
-            gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
-            grad_x = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
-            grad_y = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
-            img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
-        elif algorithm == "彩色Sobel":
-            imgBlur = cv2.GaussianBlur(frame_resized, (blur_ksize, blur_ksize), 1)
-            sobel_edges = []
-            for i in range(3):
-                grad_x = cv2.Sobel(imgBlur[:, :, i], cv2.CV_64F, 1, 0, ksize=sobel_ksize)
-                grad_y = cv2.Sobel(imgBlur[:, :, i], cv2.CV_64F, 0, 1, ksize=sobel_ksize)
-                sobel_edges.append(cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y)))
-            img_edge = cv2.bitwise_or(sobel_edges[0], sobel_edges[1])
-            img_edge = cv2.bitwise_or(img_edge, sobel_edges[2])
-        elif algorithm == "Canny":
-            gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
-            gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
-            img_edge = cv2.Canny(gray_blur, canny_low, canny_high)
-        elif algorithm == "彩色Canny":
-            imgBlur = cv2.GaussianBlur(frame_resized, (blur_ksize, blur_ksize), 1)
-            canny_edges = [cv2.Canny(imgBlur[:, :, i], canny_low, canny_high) for i in range(3)]
-            img_edge = cv2.bitwise_or(canny_edges[0], canny_edges[1])
-            img_edge = cv2.bitwise_or(img_edge, canny_edges[2])
-        elif algorithm == "Prewitt":
-            gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
-            gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
-            kernel_x = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]], dtype=np.float32)
-            kernel_y = np.array([[-1, -1, -1], [0, 0, 0], [1, 1, 1]], dtype=np.float32)
-            grad_x = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_x)
-            grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
-            img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
+        if algorithm == "YOLO猫检测":
+            # YOLO逐帧检测猫
+            results = yolo_model(frame_resized, conf=0.5)
+            cat_count = 0
+            for r in results:
+                boxes = r.boxes
+                for box in boxes:
+                    if box.cls == 15:
+                        cat_count += 1
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        cv2.rectangle(img_contour, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                        cv2.putText(img_contour, f"Cat {cat_count} ({box.conf[0]:.2f})",
+                                    (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+            total_cat_count += cat_count
+            metrics_list.append(cat_count)
 
-        # 膨胀+轮廓检测
-        kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
-        img_edge = cv2.dilate(img_edge, kernel, iterations=1)
-        frame_contour = frame_resized.copy()
-        getContours(img_edge, frame_contour)
+        else:
+            # 传统边缘检测算法
+            reference_edge = get_reference_edge(frame_resized)
+            img_edge = None
 
-        # 计算指标+写入视频
-        precision, recall, f1 = calculate_metrics(img_edge, reference_edge)
-        metrics_list.append((precision, recall, f1))
-        # 缩放回原视频尺寸写入（保持视频比例）
-        frame_contour = cv2.resize(frame_contour, (width, height))
-        out.write(frame_contour)
+            if algorithm == "Sobel":
+                gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
+                gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
+                grad_x = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
+                grad_y = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
+                img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
 
-        cv2.imshow("Video Processing (Press 'q' to stop)", frame_contour)
+            elif algorithm == "彩色Sobel":
+                imgBlur = cv2.GaussianBlur(frame_resized, (blur_ksize, blur_ksize), 1)
+                sobel_edges = []
+                for i in range(3):
+                    grad_x = cv2.Sobel(imgBlur[:, :, i], cv2.CV_64F, 1, 0, ksize=sobel_ksize)
+                    grad_y = cv2.Sobel(imgBlur[:, :, i], cv2.CV_64F, 0, 1, ksize=sobel_ksize)
+                    sobel_edges.append(cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y)))
+                img_edge = cv2.bitwise_or(sobel_edges[0], sobel_edges[1])
+                img_edge = cv2.bitwise_or(img_edge, sobel_edges[2])
+
+            elif algorithm == "Canny":
+                gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
+                gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
+                img_edge = cv2.Canny(gray_blur, canny_low, canny_high)
+
+            elif algorithm == "彩色Canny":
+                # 彩色Canny向量法
+                imgBlur = cv2.GaussianBlur(frame_resized, (blur_ksize, blur_ksize), 1)
+                b, g, r = cv2.split(imgBlur)
+                grads = []
+                for channel in [b, g, r]:
+                    dx = cv2.Sobel(channel, cv2.CV_64F, 1, 0, ksize=3)
+                    dy = cv2.Sobel(channel, cv2.CV_64F, 0, 1, ksize=3)
+                    grads.extend([dx, dy])
+                grad_mag = np.sqrt(
+                    grads[0] ** 2 + grads[1] ** 2 + grads[2] ** 2 + grads[3] ** 2 + grads[4] ** 2 + grads[5] ** 2)
+                grad_mag = cv2.normalize(grad_mag, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                img_edge = cv2.Canny(grad_mag, canny_low, canny_high)
+
+            elif algorithm == "Prewitt":
+                gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
+                gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
+                kernel_x = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]], dtype=np.float32)
+                kernel_y = np.array([[-1, -1, -1], [0, 0, 0], [1, 1, 1]], dtype=np.float32)
+                grad_x = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_x)
+                grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
+                img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
+
+            # 膨胀+轮廓检测+指标计算
+            kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
+            img_edge = cv2.dilate(img_edge, kernel, iterations=1)
+            getContours(img_edge, img_contour)
+            precision, recall, f1, ois, ods = calculate_metrics(img_edge, reference_edge)
+            metrics_list.append((precision, recall, f1, ois, ods))
+
+        # 缩放回原尺寸写入视频
+        img_contour = cv2.resize(img_contour, (width, height))
+        out.write(img_contour)
+
+        cv2.imshow("Video Processing (Press 'q' to stop)", img_contour)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -256,14 +354,24 @@ def process_video(algorithm):
     out.release()
     cv2.destroyWindow("Video Processing (Press 'q' to stop)")
 
-    # 显示平均指标
-    avg_precision = round(np.mean([m[0] for m in metrics_list]), 3)
-    avg_recall = round(np.mean([m[1] for m in metrics_list]), 3)
-    avg_f1 = round(np.mean([m[2] for m in metrics_list]), 3)
-    process_result["metrics"] = (avg_precision, avg_recall, avg_f1)
-    metrics_label.config(text=f"视频平均指标：\nPrecision: {avg_precision}\nRecall: {avg_recall}\nF1-Score: {avg_f1}")
-    messagebox.showinfo("成功",
-                        f"视频处理完成！\n保存路径：{output_path}\n平均指标：P={avg_precision}, R={avg_recall}, F1={avg_f1}")
+    # 显示处理结果
+    if algorithm == "YOLO猫检测":
+        avg_cat_count = round(total_cat_count / len(metrics_list), 1) if metrics_list else 0
+        metrics_label.config(
+            text=f"YOLO猫检测视频结果：\n总检测猫数量：{total_cat_count}\n平均每帧猫数量：{avg_cat_count}")
+        messagebox.showinfo("成功",
+                            f"视频处理完成！\n保存路径：{output_path}\n总检测猫数量：{total_cat_count}\n平均每帧猫数量：{avg_cat_count}")
+    else:
+        avg_precision = round(np.mean([m[0] for m in metrics_list]), 3)
+        avg_recall = round(np.mean([m[1] for m in metrics_list]), 3)
+        avg_f1 = round(np.mean([m[2] for m in metrics_list]), 3)
+        avg_ois = round(np.mean([m[3] for m in metrics_list]), 3)
+        avg_ods = round(np.mean([m[4] for m in metrics_list]), 3)
+        process_result["metrics"] = (avg_precision, avg_recall, avg_f1, avg_ois, avg_ods)
+        metrics_label.config(
+            text=f"视频平均指标：\nPrecision: {avg_precision}\nRecall: {avg_recall}\nF1-Score: {avg_f1}\nOIS: {avg_ois}\nODS: {avg_ods}")
+        messagebox.showinfo("成功",
+                            f"视频处理完成！\n保存路径：{output_path}\n平均指标：P={avg_precision}, R={avg_recall}, F1={avg_f1}, OIS={avg_ois}, ODS={avg_ods}")
 
 
 # -------------------------- 实时参数回调+防抖 --------------------------
@@ -319,7 +427,7 @@ def select_file():
             original_label.config(image='')
             edge_label.config(image='')
             contour_label.config(image='')
-            metrics_label.config(text="Precision: --\nRecall: --\nF1-Score: --")
+            metrics_label.config(text="Precision: --\nRecall: --\nF1-Score: --\nOIS: --\nODS: --")
         else:
             file_type = ""
             messagebox.warning("警告", "不支持的文件格式！")
@@ -351,8 +459,8 @@ def start_process():
         process_video(algorithm)  # 视频调用专门的处理函数
 
 
-def update_result_display():
-    """更新图片处理结果显示"""
+def update_result_display(algorithm=None):
+    """更新图片处理结果显示（适配YOLO和传统算法）"""
     if process_result["img_original"] is None:
         return
 
@@ -378,12 +486,17 @@ def update_result_display():
     contour_label.config(image=img_contour_tk)
     contour_label.image = img_contour_tk
 
-    # 显示指标
+    # 显示指标（区分YOLO和传统算法）
     if process_result["metrics"] is not None:
-        precision, recall, f1 = process_result["metrics"]
-        metrics_label.config(text=f"Precision: {precision}\nRecall: {recall}\nF1-Score: {f1}")
+        if algorithm == "YOLO猫检测":
+            cat_count = process_result["metrics"][5]
+            metrics_label.config(text=f"YOLO猫检测结果：\n检测到猫的数量：{cat_count}")
+        else:
+            precision, recall, f1, ois, ods = process_result["metrics"]
+            metrics_label.config(
+                text=f"Precision: {precision}\nRecall: {recall}\nF1-Score: {f1}\nOIS: {ois}\nODS: {ods}")
     else:
-        metrics_label.config(text="Precision: --\nRecall: --\nF1-Score: --")
+        metrics_label.config(text="Precision: --\nRecall: --\nF1-Score: --\nOIS: --\nODS: --")
 
 
 def save_result():
@@ -393,7 +506,7 @@ def save_result():
         return
 
     save_path = filedialog.asksaveasfilename(
-        title="保存边缘检测结果",
+        title="保存处理结果",
         defaultextension=".png",
         filetypes=[("PNG图片", "*.png"), ("JPG图片", "*.jpg"), ("所有文件", "*.*")]
     )
@@ -401,24 +514,24 @@ def save_result():
         cv2.imwrite(save_path, process_result["img_edge"])
         contour_save_path = os.path.splitext(save_path)[0] + "_contour.png"
         cv2.imwrite(contour_save_path, process_result["img_contour"])
-        messagebox.showinfo("成功", f"结果已保存！\n边缘图：{save_path}\n轮廓图：{contour_save_path}")
+        messagebox.showinfo("成功", f"结果已保存！\n处理图：{save_path}\n轮廓图：{contour_save_path}")
 
 
 # -------------------------- 初始化前端界面 --------------------------
 def init_gui():
     global root, algo_combobox, file_label, original_label, edge_label, contour_label, metrics_label
     root = tk.Tk()  # 全局root，供防抖回调使用
-    root.title("边缘检测工具（实时参数调整版）")
-    root.geometry("900x600")
+    root.title("边缘检测工具（含YOLO猫检测+OIS/ODS指标）")
+    root.geometry("900x650")  # 适配新增指标显示，微调高度
 
     # 1. 顶部控制区
     control_frame = ttk.Frame(root, padding="10")
     control_frame.pack(fill=tk.X)
 
-    # 算法选择
+    # 算法选择（新增YOLO猫检测选项）
     algo_label = ttk.Label(control_frame, text="选择算法：")
     algo_label.grid(row=0, column=0, padx=5, pady=5)
-    algo_options = ["Sobel", "彩色Sobel", "Canny", "彩色Canny", "Prewitt"]
+    algo_options = ["Sobel", "彩色Sobel", "Canny", "彩色Canny", "Prewitt", "YOLO猫检测"]
     algo_combobox = ttk.Combobox(control_frame, values=algo_options, state="readonly")
     algo_combobox.grid(row=0, column=1, padx=5, pady=5)
     # 算法切换时自动触发图片处理
@@ -443,15 +556,16 @@ def init_gui():
     # 图片显示标签
     original_label = ttk.Label(result_frame, text="原图")
     original_label.grid(row=0, column=0, padx=10, pady=10)
-    edge_label = ttk.Label(result_frame, text="边缘检测结果")
+    edge_label = ttk.Label(result_frame, text="处理结果")
     edge_label.grid(row=0, column=1, padx=10, pady=10)
-    contour_label = ttk.Label(result_frame, text="轮廓检测结果")
+    contour_label = ttk.Label(result_frame, text="轮廓/检测结果")
     contour_label.grid(row=0, column=2, padx=10, pady=10)
 
-    # 3. 评估指标显示区
+    # 3. 评估指标显示区（新增OIS/ODS指标）
     metrics_frame = ttk.Frame(root, padding="10")
     metrics_frame.pack(fill=tk.X)
-    metrics_label = ttk.Label(metrics_frame, text="Precision: --\nRecall: --\nF1-Score: --", font=("Arial", 12))
+    metrics_label = ttk.Label(metrics_frame, text="Precision: --\nRecall: --\nF1-Score: --\nOIS: --\nODS: --",
+                              font=("Arial", 12))
     metrics_label.pack(padx=10, pady=5, anchor=tk.W)
 
     # 初始化参数窗口
@@ -462,4 +576,6 @@ def init_gui():
 
 # -------------------------- 主函数 --------------------------
 if __name__ == "__main__":
+    # 提示安装依赖（首次运行需执行）
+    print("请确保已安装依赖：pip install opencv-python numpy pillow ultralytics")
     init_gui()
