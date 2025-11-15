@@ -74,14 +74,14 @@ EDGE_ALGORITHMS = {
 
 
 # ------------------------------------------------------------------------------
-# 2. 车辆特征提取+分类逻辑（核心）
+# 2. 车辆特征提取+分类逻辑（核心：新增矩形坐标返回+可调节矩形度阈值）
 # ------------------------------------------------------------------------------
 def extract_vehicle_features(rgb_img, edge_img):
-    """提取车辆关键特征：轮廓面积、长宽比、矩形度、主色调"""
+    """提取车辆关键特征：轮廓面积、长宽比、矩形度、主色调 + 外接矩形坐标（用于标记）"""
     # 1. 提取轮廓（只保留外部轮廓，过滤内部小轮廓）
     contours, _ = cv2.findContours(edge_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return 0, 0.0, 0.0, (0, 0, 0)  # 无轮廓返回默认值
+        return 0, 0.0, 0.0, (0, 0, 0), (0, 0, 0, 0)  # 最后一个返回值：(x,y,w,h) 矩形坐标
 
     # 2. 筛选最大轮廓（车辆主体）
     max_contour = max(contours, key=cv2.contourArea)
@@ -102,11 +102,11 @@ def extract_vehicle_features(rgb_img, edge_img):
     b_mean = np.mean(rgb_img[mask == 255, 0]) if np.sum(mask == 255) > 0 else 0
     main_color = (r_mean, g_mean, b_mean)
 
-    return area, aspect_ratio, rectangularity, main_color
+    return area, aspect_ratio, rectangularity, main_color, (x, y, w, h)  # 新增矩形坐标返回
 
 
-def classify_vehicle(area, aspect_ratio, rectangularity, main_color):
-    """车辆分类规则：多特征组合判断"""
+def classify_vehicle(area, aspect_ratio, rectangularity, main_color, min_rectangularity):
+    """车辆分类规则：多特征组合判断（使用可调节矩形度阈值）"""
     r, g, b = main_color
     total_brightness = (r + g + b) / 3  # 亮度过滤（避免过暗图片）
 
@@ -115,8 +115,8 @@ def classify_vehicle(area, aspect_ratio, rectangularity, main_color):
         return "未识别（轮廓过小，非车辆）"
     if total_brightness < 40:  # 亮度阈值（避免暗图噪声）
         return "未识别（图片过暗，无法判断）"
-    if rectangularity < 0.6:  # 矩形度（车辆轮廓接近矩形）
-        return "未识别（轮廓不规则，非车辆）"
+    if rectangularity < min_rectangularity:  # 矩形度（使用可调节阈值）
+        return f"未识别（轮廓不规则，矩形度{rectangularity:.2f} < {min_rectangularity:.2f}）"
 
     # 车辆长宽比判断（适配侧面/正面视角）
     if (aspect_ratio >= 2.0 and aspect_ratio <= 5.0) or (aspect_ratio >= 1.2 and aspect_ratio < 2.0):
@@ -134,13 +134,13 @@ def classify_vehicle(area, aspect_ratio, rectangularity, main_color):
 
 
 # ------------------------------------------------------------------------------
-# 3. 中文UI界面（操作直观，适配车辆识别场景）
+# 3. 中文UI界面（添加矩形度调节滑块+车辆矩形框标记）
 # ------------------------------------------------------------------------------
 class VehicleClassificationUI:
     def __init__(self, root):
         self.root = root
         self.root.title("车辆识别系统（边缘检测+形状特征）")
-        self.root.geometry("1100x900")
+        self.root.geometry("1100x1000")  # 增加高度容纳矩形度调节滑块
         self.root.resizable(False, False)
 
         # 存储变量
@@ -150,6 +150,9 @@ class VehicleClassificationUI:
         self.edge_img = None
         self.classification_result = None
         self.selected_algorithm = tk.StringVar(value="彩色Canny边缘检测")  # 推荐算法
+        self.vehicle_rect = (0, 0, 0, 0)  # 车辆外接矩形坐标(x,y,w,h)
+        # 矩形度可调节参数（默认0.2，范围0.1-0.9）
+        self.min_rectangularity = tk.DoubleVar(value=0.2)
 
         # ---------------------- 顶部控制区 ----------------------
         control_frame = ttk.Frame(root)
@@ -181,9 +184,9 @@ class VehicleClassificationUI:
         self.path_label.grid(row=0, column=4, padx=10)
 
         # ---------------------- 图片展示区 ----------------------
-        # 原始图片
-        ttk.Label(root, text="原始车辆图片（推荐侧面/正面视角）", font=("微软雅黑", 12)).grid(row=1, column=0, padx=20,
-                                                                                            pady=10)
+        # 原始图片（带车辆标记）
+        ttk.Label(root, text="原始车辆图片（红色矩形标记识别结果）", font=("微软雅黑", 12)).grid(row=1, column=0, padx=20,
+                                                                                               pady=10)
         self.raw_canvas = tk.Canvas(root, width=400, height=350, borderwidth=1, relief="solid")
         self.raw_canvas.grid(row=2, column=0, padx=20, pady=10)
 
@@ -193,9 +196,31 @@ class VehicleClassificationUI:
         self.edge_canvas = tk.Canvas(root, width=400, height=350, borderwidth=1, relief="solid")
         self.edge_canvas.grid(row=2, column=1, padx=20, pady=10)
 
+        # ---------------------- 矩形度调节区（新增）----------------------
+        rect_frame = ttk.Frame(root)
+        rect_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+        ttk.Label(
+            rect_frame,
+            text="矩形度阈值调节（默认0.2，值越小越宽松）：",
+            font=("微软雅黑", 11)
+        ).grid(row=0, column=0, padx=10)
+        # 矩形度滑块（0.1-0.9范围）
+        rect_slider = ttk.Scale(
+            rect_frame, from_=0.1, to=0.9, variable=self.min_rectangularity,
+            orient=tk.HORIZONTAL, command=self.update_rect_display,
+            length=300
+        )
+        rect_slider.grid(row=0, column=1, padx=10)
+        # 矩形度数值显示
+        self.rect_value_label = ttk.Label(
+            rect_frame, text=f"{self.min_rectangularity.get():.2f}",
+            font=("微软雅黑", 11), width=10
+        )
+        self.rect_value_label.grid(row=0, column=2, padx=10)
+
         # ---------------------- 识别结果区 ----------------------
         result_frame = ttk.Frame(root)
-        result_frame.grid(row=3, column=0, columnspan=2, padx=20, pady=20, sticky="w")
+        result_frame.grid(row=4, column=0, columnspan=2, padx=20, pady=20, sticky="w")
 
         ttk.Label(result_frame, text="识别结果：", font=("微软雅黑", 14, "bold")).grid(row=0, column=0, padx=10)
         self.result_label = ttk.Label(
@@ -213,7 +238,7 @@ class VehicleClassificationUI:
 
         self.feat_label = ttk.Label(
             result_frame,
-            text="轮廓面积：--（>5000） | 长宽比：--（1.2-5.0） | 矩形度：--（>0.6）",
+            text="轮廓面积：--（>5000） | 长宽比：--（1.2-5.0） | 矩形度：--（≥0.2）",
             font=("微软雅黑", 11)
         )
         self.feat_label.grid(row=1, column=1, padx=20, pady=15)
@@ -221,11 +246,16 @@ class VehicleClassificationUI:
         # 使用提示
         ttk.Label(
             result_frame,
-            text="使用提示：1. 选择侧面/正面视角、背景简单的车辆图片；2. 光线充足避免暗图；3. 车身无严重遮挡",
+            text="使用提示：1. 选择侧面/正面视角、背景简单的车辆图片；2. 光线充足避免暗图；3. 车身无严重遮挡；4. 矩形度阈值越小，越容易识别不规则轮廓",
             font=("微软雅黑", 10), foreground="gray"
         ).grid(row=2, column=0, columnspan=2, padx=10, pady=5)
 
-    # ---------------------- UI回调函数 ----------------------
+    # ---------------------- 新增：矩形度数值更新函数 ----------------------
+    def update_rect_display(self, value):
+        """实时更新矩形度阈值显示"""
+        self.rect_value_label.config(text=f"{float(value):.2f}")
+
+    # ---------------------- UI回调函数（修改：添加矩形框标记）----------------------
     def select_image(self):
         """选择车辆图片并预览"""
         file_types = [("图片文件", "*.jpg *.jpeg *.png *.bmp"), ("所有文件", "*.*")]
@@ -240,7 +270,7 @@ class VehicleClassificationUI:
                 raise ValueError("图片损坏或格式不支持")
             self.gray_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2GRAY)
 
-            # 预览原始图片（缩放适配画布）
+            # 预览原始图片（无矩形框）
             pil_img = Image.fromarray(cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB))
             pil_img = pil_img.resize((400, 350), Image.Resampling.LANCZOS)
             self.raw_img_tk = ImageTk.PhotoImage(pil_img)
@@ -252,13 +282,14 @@ class VehicleClassificationUI:
             self.path_label.config(text=display_path)
             self.detect_btn.config(state="normal")
             self.result_label.config(text="--", foreground="red")
-            self.feat_label.config(text="轮廓面积：--（>5000） | 长宽比：--（1.2-5.0） | 矩形度：--（>0.6）")
+            self.feat_label.config(text="轮廓面积：--（>5000） | 长宽比：--（1.2-5.0） | 矩形度：--（≥0.2）")
+            self.vehicle_rect = (0, 0, 0, 0)  # 重置矩形框
 
         except Exception as e:
             messagebox.showerror("读取失败", f"无法读取图片：{str(e)}\n建议选择清晰、背景简单的车辆图片")
 
     def start_detection(self):
-        """执行边缘检测+车辆识别"""
+        """执行边缘检测+车辆识别（添加矩形框标记）"""
         if not self.image_path:
             messagebox.showwarning("警告", "请先选择图片！")
             return
@@ -279,23 +310,53 @@ class VehicleClassificationUI:
             self.edge_canvas.delete("all")
             self.edge_canvas.create_image(0, 0, anchor="nw", image=self.edge_img_tk)
 
-            # 3. 提取特征+分类识别
-            area, aspect_ratio, rectangularity, main_color = extract_vehicle_features(self.rgb_img, self.edge_img)
-            self.classification_result = classify_vehicle(area, aspect_ratio, rectangularity, main_color)
+            # 3. 提取特征（包含矩形坐标）+ 分类识别（传入可调节矩形度阈值）
+            area, aspect_ratio, rectangularity, main_color, self.vehicle_rect = extract_vehicle_features(self.rgb_img,
+                                                                                                         self.edge_img)
+            self.classification_result = classify_vehicle(
+                area, aspect_ratio, rectangularity, main_color,
+                self.min_rectangularity.get()  # 传入可调节矩形度阈值
+            )
 
             # 4. 更新结果显示（绿色=识别成功，红色=未识别）
             if "识别为：车辆" in self.classification_result:
                 self.result_label.config(text=self.classification_result, foreground="darkgreen")
+                # 绘制红色矩形框标记车辆
+                self.draw_vehicle_rect()
             else:
                 self.result_label.config(text=self.classification_result, foreground="red")
+                # 未识别时显示原图（无矩形框）
+                pil_img = Image.fromarray(cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB))
+                pil_img = pil_img.resize((400, 350), Image.Resampling.LANCZOS)
+                self.raw_img_tk = ImageTk.PhotoImage(pil_img)
+                self.raw_canvas.delete("all")
+                self.raw_canvas.create_image(0, 0, anchor="nw", image=self.raw_img_tk)
 
             # 5. 更新特征值显示（保留1位小数）
             self.feat_label.config(
-                text=f"轮廓面积：{int(area)}（>5000） | 长宽比：{aspect_ratio:.1f}（1.2-5.0） | 矩形度：{rectangularity:.2f}（>0.6）"
+                text=f"轮廓面积：{int(area)}（>5000） | 长宽比：{aspect_ratio:.1f}（1.2-5.0） | 矩形度：{rectangularity:.2f}（≥{self.min_rectangularity.get():.2f}）"
             )
 
         except Exception as e:
             messagebox.showerror("识别失败", f"错误原因：{str(e)}")
+
+    # ---------------------- 新增：绘制车辆矩形框函数 ----------------------
+    def draw_vehicle_rect(self):
+        """在原始图片上绘制红色矩形框标记车辆"""
+        x, y, w, h = self.vehicle_rect
+        # 复制原图避免修改原始数据
+        marked_img = self.rgb_img.copy()
+        # 绘制红色矩形框（线宽3，醒目且不遮挡细节）
+        cv2.rectangle(marked_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
+        # 添加"车辆"文字标注
+        cv2.putText(marked_img, "车辆", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+        # 缩放后显示到画布
+        pil_img = Image.fromarray(cv2.cvtColor(marked_img, cv2.COLOR_BGR2RGB))
+        pil_img = pil_img.resize((400, 350), Image.Resampling.LANCZOS)
+        self.raw_img_tk = ImageTk.PhotoImage(pil_img)
+        self.raw_canvas.delete("all")
+        self.raw_canvas.create_image(0, 0, anchor="nw", image=self.raw_img_tk)
 
 
 # ------------------------------------------------------------------------------
