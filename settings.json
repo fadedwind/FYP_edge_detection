@@ -1,5 +1,5 @@
 {
-  "algorithm": "Canny",
+  "algorithm": "HED",
   "Blur": 7,
   "Sobel_Ksize": 3,
   "Dilate": 1,

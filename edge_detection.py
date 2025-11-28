@@ -10,6 +10,45 @@ import webbrowser
 from datetime import datetime
 import html
 
+# Cached OpenCV DNN net for HED (module-level singleton)
+_cached_hed_net = None
+_cached_hed_paths = None  # (prototxt_path, caffemodel_path)
+
+
+def get_hed_net():
+    """Return a cached OpenCV DNN net for HED if available; load and cache on first call.
+    Returns None if no Caffe model/prototxt found or loading fails.
+    """
+    global _cached_hed_net, _cached_hed_paths
+    try:
+        repo_dir = os.path.dirname(__file__)
+    except Exception:
+        repo_dir = os.getcwd()
+    prototxt_path = os.path.join(repo_dir, 'models', 'hed_deploy.prototxt')
+    cand1 = os.path.join(repo_dir, 'models', 'hed_pretrained_bsds.caffemodel')
+    cand2 = os.path.join(repo_dir, 'models', 'hed_bsds.caffemodel')
+    caffemodel_path = cand1 if os.path.exists(cand1) else (cand2 if os.path.exists(cand2) else None)
+
+    paths = (prototxt_path, caffemodel_path)
+    if _cached_hed_net is not None and _cached_hed_paths == paths:
+        return _cached_hed_net
+
+    if not (os.path.exists(prototxt_path) and caffemodel_path and os.path.exists(caffemodel_path)):
+        return None
+
+    try:
+        import cv2 as _cv2
+        net = _cv2.dnn.readNetFromCaffe(prototxt_path, caffemodel_path)
+        _cached_hed_net = net
+        _cached_hed_paths = paths
+        print('Loaded HED net from', prototxt_path, 'and', caffemodel_path)
+        return _cached_hed_net
+    except Exception as e:
+        print('Failed to load HED net:', e)
+        _cached_hed_net = None
+        _cached_hed_paths = None
+        return None
+
 # -------------------------- 全局参数配置 --------------------------
 frameWidth = 640
 frameHeight = 480
@@ -25,6 +64,10 @@ edge_label = None
 contour_label = None
 metrics_label = None
 pr_label = None
+
+# 评估基准与BSDS路径（可选）
+EVAL_REF_MODE = "Canny"  # "Canny" or "BSDS"
+BSDS_ROOT = ""  # 指向 BSR_bsds500/BSDS500/data
 
 # 设置文件路径
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
@@ -289,10 +332,65 @@ def getContours(img, imgContour):
 
 
 def get_reference_edge(img):
-    """生成参考边缘（作为Ground Truth，用于计算评估指标）"""
+    """生成参考边缘（默认使用 Canny）。若需BSDS真实GT，请使用 get_reference_edge_for_path。"""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    reference_edge = cv2.Canny(gray, 150, 255)  # 高阈值保证参考边缘可靠性
+    reference_edge = cv2.Canny(gray, 150, 255)
     return reference_edge
+
+
+def get_reference_edge_for_path(image_path: str, img):
+    """根据评估基准设置返回参考边缘。
+    - 当 EVAL_REF_MODE == 'BSDS' 且 BSDS_ROOT 设置可用、文件名匹配到 groundTruth/*.mat 时，返回BSDS GT边缘。
+    - 否则回退到Canny伪参考。
+    """
+    try:
+        if EVAL_REF_MODE == "BSDS" and BSDS_ROOT and image_path:
+            import os
+            base = os.path.splitext(os.path.basename(image_path))[0]
+            # 在 {train,val,test} 三个子集里查找 .mat
+            candidates = [
+                os.path.join(BSDS_ROOT, 'groundTruth', 'train', f'{base}.mat'),
+                os.path.join(BSDS_ROOT, 'groundTruth', 'val', f'{base}.mat'),
+                os.path.join(BSDS_ROOT, 'groundTruth', 'test', f'{base}.mat'),
+            ]
+            gt_mat = None
+            for p in candidates:
+                if os.path.exists(p):
+                    gt_mat = p
+                    break
+            if gt_mat is not None:
+                try:
+                    import scipy.io as sio
+                    mat = sio.loadmat(gt_mat)
+                    # groundTruth 通常是一个 cell 数组，每个元素包含 'Boundaries'
+                    gt = mat.get('groundTruth', None)
+                    if gt is not None and gt.size > 0:
+                        # 合并所有标注的边界（并集）
+                        H, W = img.shape[:2]
+                        union = np.zeros((H, W), dtype=np.float32)
+                        # gt 是 object 数组，访问每个标注的 Boundaries
+                        for i in range(gt.size):
+                            entry = gt[0, i]
+                            # 支持不同MAT结构：可能是 dict-like 或有 dtype
+                            try:
+                                bmap = entry['Boundaries'][0, 0]
+                            except Exception:
+                                # 有些版本是 numpy.void with named fields
+                                bmap = entry[0, 0]['Boundaries'][0, 0]
+                            # bmap 是 0/1，尺寸为原图尺寸
+                            if bmap.dtype != np.float32:
+                                bmap = bmap.astype(np.float32)
+                            # 若尺寸不一致则缩放到当前处理尺寸
+                            if bmap.shape[0] != H or bmap.shape[1] != W:
+                                bmap = cv2.resize(bmap, (W, H), interpolation=cv2.INTER_NEAREST)
+                            union = np.maximum(union, bmap)
+                        ref = (union > 0.5).astype(np.uint8) * 255
+                        return ref
+                except Exception as _e:
+                    print('加载BSDS GT失败，回退Canny：', _e)
+    except Exception as _e2:
+        print('get_reference_edge_for_path 异常，回退Canny：', _e2)
+    return get_reference_edge(img)
 
 
 def calculate_metrics(detected_edge, reference_edge):
@@ -348,7 +446,7 @@ def process_image_realtime(algorithm):
         return
 
     img = cv2.resize(img, (frameWidth, frameHeight))
-    reference_edge = get_reference_edge(img)
+    reference_edge = get_reference_edge_for_path(file_path, img)
     blur_ksize, sobel_ksize, canny_low, canny_high, dilate_ksize = read_params()
     # 算法执行（与视频处理相同的分支，但在静态图片上）
     img_edge = None
@@ -385,18 +483,73 @@ def process_image_realtime(algorithm):
         grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
         img_edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
 
-    # 膨胀边缘
+    # 注意：不要在这里对 img_edge 做膨胀（某些算法如 HED 会在后面生成 img_edge），
+    # 膨胀操作将在所有算法分支后统一执行，并在执行前进行有效性/类型检查。
+    # HED (deep learning) 支持：优先使用 OpenCV DNN + Caffe model（如果存在），否则尝试 hed.py 的 PyTorch 路径
+    if algorithm == "HED":
+        # try OpenCV DNN Caffe first (no torch required)
+        try:
+            prototxt_path = os.path.join(os.path.dirname(__file__), 'models', 'hed_deploy.prototxt')
+            caffemodel_path = None
+            # look for common caffemodel names
+            cand1 = os.path.join(os.path.dirname(__file__), 'models', 'hed_pretrained_bsds.caffemodel')
+            cand2 = os.path.join(os.path.dirname(__file__), 'models', 'hed_bsds.caffemodel')
+            if os.path.exists(cand1):
+                caffemodel_path = cand1
+            elif os.path.exists(cand2):
+                caffemodel_path = cand2
+
+            if os.path.exists(prototxt_path) and caffemodel_path and os.path.exists(caffemodel_path):
+                try:
+                    import cv2 as _cv2
+                    net = _cv2.dnn.readNetFromCaffe(prototxt_path, caffemodel_path)
+                    blob = _cv2.dnn.blobFromImage(img, scalefactor=1.0, size=(500, 500), mean=(104.00698793,116.66876762,122.67891434), swapRB=False, crop=False)
+                    net.setInput(blob)
+                    out = net.forward()
+                    out_map = out[0,0,:,:]
+                    out_map = (out_map * 255.0).clip(0,255).astype('uint8')
+                    img_edge = _cv2.resize(out_map, (frameWidth, frameHeight), interpolation=_cv2.INTER_LINEAR)
+                except Exception as _e:
+                    print('HED (Caffe/OpenCV) 推理失败：', _e)
+                    img_edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+            else:
+                # fallback to PyTorch hed.py implementation if available
+                try:
+                    from hed import run_hed
+                    hed_map = run_hed(img, model=None, device='cpu')
+                    img_edge = cv2.resize(hed_map, (frameWidth, frameHeight), interpolation=cv2.INTER_LINEAR)
+                except Exception as e:
+                    print('HED 推理（PyTorch）不可用或失败：', e)
+                    img_edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+        except Exception as e:
+            print('HED 总体推理路径失败：', e)
+            img_edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+    # 在算法分支全部执行后，确保 img_edge 为有效的单通道 uint8 图像，再执行膨胀和后续步骤
+    try:
+        if img_edge is None or getattr(img_edge, 'size', 0) == 0:
+            img_edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+        # 如果是多通道，转换为灰度
+        if img_edge.ndim == 3:
+            img_edge = cv2.cvtColor(img_edge, cv2.COLOR_BGR2GRAY)
+        img_edge = img_edge.astype(np.uint8)
+    except Exception as _e:
+        print('规范化 img_edge 失败，回退到全零图：', _e)
+        img_edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+
+    # 膨胀边缘（统一在此处进行）
+    # 评估应基于“未膨胀”的边缘，避免膨胀引入的假阳导致 precision 偏低
+    edge_for_metrics = img_edge.copy()
     kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
-    img_edge = cv2.dilate(img_edge, kernel, iterations=1)
+    img_edge_display = cv2.dilate(img_edge, kernel, iterations=1)
 
     # 轮廓检测+指标计算
     img_contour = img.copy()
-    getContours(img_edge, img_contour)
-    precision, recall, f1 = calculate_metrics(img_edge, reference_edge)
+    getContours(img_edge_display, img_contour)
+    precision, recall, f1 = calculate_metrics(edge_for_metrics, reference_edge)
 
     process_result = {
         "img_original": img,
-        "img_edge": img_edge,
+        "img_edge": img_edge_display,
         "img_contour": img_contour,
         "metrics": (precision, recall, f1)
     }
@@ -549,6 +702,42 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize):
         grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
         edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
 
+    elif algorithm == "HED":
+        # 首先尝试 OpenCV DNN + Caffe（无需 torch），回退到 hed.py 的 PyTorch 实现
+        try:
+            repo_dir = os.path.dirname(__file__)
+        except Exception:
+            repo_dir = os.getcwd()
+        prototxt_path = os.path.join(repo_dir, 'models', 'hed_deploy.prototxt')
+        cand1 = os.path.join(repo_dir, 'models', 'hed_pretrained_bsds.caffemodel')
+        cand2 = os.path.join(repo_dir, 'models', 'hed_bsds.caffemodel')
+        caffemodel_path = cand1 if os.path.exists(cand1) else (cand2 if os.path.exists(cand2) else None)
+
+        # 使用缓存的 OpenCV DNN net（减少重复加载开销）
+        try:
+            net = get_hed_net()
+            if net is not None:
+                _cv2 = cv2
+                blob = _cv2.dnn.blobFromImage(img, scalefactor=1.0, size=(500, 500), mean=(104.00698793,116.66876762,122.67891434), swapRB=False, crop=False)
+                net.setInput(blob)
+                out = net.forward()
+                out_map = out[0,0,:,:]
+                out_map = (out_map * 255.0).clip(0,255).astype('uint8')
+                edge = cv2.resize(out_map, (frameWidth, frameHeight), interpolation=cv2.INTER_LINEAR)
+            else:
+                # 若未能加载 Caffe net，则回退到 hed.py 的 PyTorch 实现
+                try:
+                    from hed import run_hed
+                    hed_map = run_hed(img, model=None, device='cpu')
+                    edge = cv2.resize(hed_map, (frameWidth, frameHeight), interpolation=cv2.INTER_LINEAR)
+                    edge = edge.astype(np.uint8)
+                except Exception as _e:
+                    print('compute_edge_strength: HED (PyTorch) 不可用或失败：', _e)
+                    edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+        except Exception as _e:
+            print('compute_edge_strength: HED 推理失败：', _e)
+            edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
+
     # 保证返回 uint8 单通道
     if edge is None:
         edge = np.zeros((frameHeight, frameWidth), dtype=np.uint8)
@@ -590,14 +779,13 @@ def batch_process_directory():
     blur_ksize, sobel_ksize, canny_low, canny_high, dilate_ksize = read_params()
 
     # 阈值列表（用于搜索 ODS/OIS）
-    # 将步长设为 1 以获得更细致的 PR 曲线（注意：阈值步长越小，计算时间越长）
     thresholds = list(range(0, 256, 1))
 
     per_image_best = []  # 存放每张图像的 OIS（best per-image）数据
-    # 用于 ODS：记录每个阈值在所有图像上的累积 precision/recall/f1
-    thr_precision_sum = np.zeros(len(thresholds), dtype=np.float64)
-    thr_recall_sum = np.zeros(len(thresholds), dtype=np.float64)
-    thr_f1_sum = np.zeros(len(thresholds), dtype=np.float64)
+    # 为了让 PR 曲线更可靠，使用累积 TP/FP/FN（像素级计数）计算数据集级 Precision/Recall
+    thr_TP_sum = np.zeros(len(thresholds), dtype=np.float64)
+    thr_FP_sum = np.zeros(len(thresholds), dtype=np.float64)
+    thr_FN_sum = np.zeros(len(thresholds), dtype=np.float64)
 
     for fp in files:
         img = cv2.imread(fp)
@@ -610,33 +798,38 @@ def batch_process_directory():
         best_f1 = -1.0
         best_prec = best_rec = best_thr = 0
 
-        # 对每个阈值计算指标
+        # 对每个阈值计算像素级的 TP/FP/FN 并累加到全局数组；同时记录单图最优阈值（OIS）
         for i, t in enumerate(thresholds):
             _, detected = cv2.threshold(edge_strength, t, 255, cv2.THRESH_BINARY)
-            p, r, f = calculate_metrics(detected, reference)
-            thr_precision_sum[i] += p
-            thr_recall_sum[i] += r
-            thr_f1_sum[i] += f
-            if f > best_f1:
-                best_f1 = f
-                best_prec = p
-                best_rec = r
+            # 以 numpy 逻辑运算计算像素计数
+            det_mask = (detected > 0)
+            ref_mask = (reference > 0)
+            TP = int(np.logical_and(det_mask, ref_mask).sum())
+            FP = int(np.logical_and(det_mask, np.logical_not(ref_mask)).sum())
+            FN = int(np.logical_and(np.logical_not(det_mask), ref_mask).sum())
+
+            thr_TP_sum[i] += TP
+            thr_FP_sum[i] += FP
+            thr_FN_sum[i] += FN
+
+            # 计算单图 precision/recall/f1（像素级）以找出该图的最佳阈值
+            prec = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+            rec = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+            if f1 > best_f1:
+                best_f1 = f1
+                best_prec = prec
+                best_rec = rec
                 best_thr = t
 
         per_image_best.append((os.path.basename(fp), best_thr, best_prec, best_rec, best_f1))
 
-        # 保存该图像在最佳阈值下的边缘图与轮廓图到 output/<timestamp>/
+        # 仅保存最佳阈值下的二值边缘图（用户要求不保存原始带轮廓版本）
         try:
-            # 生成二值边缘和轮廓图
             _, detected_final = cv2.threshold(edge_strength, best_thr, 255, cv2.THRESH_BINARY)
-            contour_img = img.copy()
-            getContours(detected_final, contour_img)
-            # 保存文件名
             base_name = os.path.splitext(os.path.basename(fp))[0]
             edge_save_name = f"{base_name}_edge.png"
-            contour_save_name = f"{base_name}_contour.png"
             cv2.imwrite(os.path.join(run_output_dir, edge_save_name), detected_final)
-            cv2.imwrite(os.path.join(run_output_dir, contour_save_name), contour_img)
         except Exception:
             # 若保存失败，不影响整体处理
             pass
@@ -646,13 +839,30 @@ def batch_process_directory():
         messagebox.showwarning("警告", "未处理到任何图片（可能格式不支持或读取失败）！")
         return
 
-    # 计算 ODS：在所有阈值上取平均 F1，选择平均F1最大的阈值
-    mean_f1_per_thr = thr_f1_sum / n
+    # 计算 ODS（数据集级）：使用累积的 TP/FP/FN 计算每个阈值的全数据集 Precision/Recall/F1
+    # 避免除零
+    denom_prec = thr_TP_sum + thr_FP_sum
+    precision_mean = np.zeros_like(thr_TP_sum)
+    nonzero = denom_prec > 0
+    precision_mean[nonzero] = thr_TP_sum[nonzero] / denom_prec[nonzero]
+
+    denom_rec = thr_TP_sum + thr_FN_sum
+    recall_mean = np.zeros_like(thr_TP_sum)
+    nonzero_r = denom_rec > 0
+    recall_mean[nonzero_r] = thr_TP_sum[nonzero_r] / denom_rec[nonzero_r]
+
+    # 数据集级 F1
+    mean_f1_per_thr = np.zeros_like(precision_mean)
+    nonzero_f = (precision_mean + recall_mean) > 0
+    mean_f1_per_thr[nonzero_f] = 2 * precision_mean[nonzero_f] * recall_mean[nonzero_f] / (
+        precision_mean[nonzero_f] + recall_mean[nonzero_f]
+    )
+
     best_idx = int(np.argmax(mean_f1_per_thr))
     ods_thr = thresholds[best_idx]
-    ods_prec = thr_precision_sum[best_idx] / n
-    ods_rec = thr_recall_sum[best_idx] / n
-    ods_f1 = thr_f1_sum[best_idx] / n
+    ods_prec = float(precision_mean[best_idx])
+    ods_rec = float(recall_mean[best_idx])
+    ods_f1 = float(mean_f1_per_thr[best_idx])
 
     # 计算 OIS：对每张图的最佳值取平均
     ois_prec = np.mean([x[2] for x in per_image_best])
@@ -666,17 +876,40 @@ def batch_process_directory():
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
 
-        precision_mean = thr_precision_sum / n
-        recall_mean = thr_recall_sum / n
-        # 为绘图按 recall 升序排序并做简单插值以获得更平滑的曲线
+        # 使用之前计算得到的 dataset-level precision_mean/recall_mean（基于累积 TP/FP/FN）
+        # 确保 precision/recall 在 [0,1]
+        precision_mean = np.clip(precision_mean, 0.0, 1.0)
+        recall_mean = np.clip(recall_mean, 0.0, 1.0)
+
+        # 为绘图按 recall 升序排序；当 recall 有重复时使用最大 precision（取 envelope）
         idxs = np.argsort(recall_mean)
         recall_sorted = recall_mean[idxs]
         precision_sorted = precision_mean[idxs]
 
-        # 创建更细致的 x 轴点并插值 precision
+        # 对重复 recall 值做最大化处理，构造单调的 recall-precision 表达
+        unique_recalls = []
+        max_precisions = []
+        for r, p in zip(recall_sorted, precision_sorted):
+            if len(unique_recalls) == 0 or r != unique_recalls[-1]:
+                unique_recalls.append(r)
+                max_precisions.append(p)
+            else:
+                # 相同 recall，保留较大 precision
+                if p > max_precisions[-1]:
+                    max_precisions[-1] = p
+
+        recall_sorted = np.array(unique_recalls)
+        precision_sorted = np.array(max_precisions)
+
+        # 插值到更细的 recall 轴以获得平滑曲线
         try:
-            recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
-            precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
+            # 当 recall_sorted 全为常数时，linspace 会退化，此时直接使用原数据
+            if recall_sorted.max() - recall_sorted.min() < 1e-6:
+                recall_fine = recall_sorted
+                precision_fine = precision_sorted
+            else:
+                recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
+                precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
         except Exception:
             recall_fine = recall_sorted
             precision_fine = precision_sorted
@@ -732,7 +965,7 @@ def batch_process_directory():
     except Exception as e:
         print('保存 CSV 失败：', e)
     # 在 GUI 上显示简短结果并弹窗
-    metrics_label.config(text=f"Batch ODS F1: {round(ods_f1,3)} | OIS F1: {round(ois_f1,3)}")
+    metrics_label.config(text=f"Batch ODS_F1: {round(ods_f1,3)} | ODS_thr: {ods_thr}\nOIS_F1: {round(ois_f1,3)}")
     messagebox.showinfo("批量处理完成", f"已处理 {n} 张图片\nCSV结果：{out_csv}\nODS_F1={round(ods_f1,3)}, OIS_F1={round(ois_f1,3)}")
 
 
@@ -897,9 +1130,70 @@ def init_gui():
     root.title("边缘检测工具（实时参数调整版）")
     root.geometry("900x600")
 
+    # 左侧工具栏：算法分组（传统/现代）与评估基准设置
+    sidebar = ttk.Frame(root, padding="8")
+    sidebar.pack(side=tk.LEFT, fill=tk.Y)
+
+    algo_var = tk.StringVar(value="Sobel")
+
+    def on_algo_radio():
+        try:
+            sel = algo_var.get()
+            if sel == "HED":
+                algo_combobox.set("HED")
+            else:
+                algo_combobox.set(sel)
+            process_image_realtime(sel)
+            save_current_params()
+        except Exception:
+            pass
+
+    lf_trad = ttk.LabelFrame(sidebar, text="传统方法")
+    lf_trad.pack(fill=tk.X, pady=6)
+    for name in ["Sobel", "彩色Sobel", "Canny", "彩色Canny", "Prewitt"]:
+        rb = ttk.Radiobutton(lf_trad, text=name, value=name, variable=algo_var, command=on_algo_radio)
+        rb.pack(anchor=tk.W, padx=6, pady=2)
+
+    lf_modern = ttk.LabelFrame(sidebar, text="现代方法")
+    lf_modern.pack(fill=tk.X, pady=6)
+    rb_hed = ttk.Radiobutton(lf_modern, text="HED", value="HED", variable=algo_var, command=on_algo_radio)
+    rb_hed.pack(anchor=tk.W, padx=6, pady=2)
+
+    # 评估基准设置
+    lf_eval = ttk.LabelFrame(sidebar, text="评估基准")
+    lf_eval.pack(fill=tk.X, pady=6)
+    ref_var = tk.StringVar(value="Canny")
+
+    def on_ref_change(event=None):
+        global EVAL_REF_MODE
+        EVAL_REF_MODE = ref_var.get()
+        # 切换即刻重算（若当前是图片）
+        alg = algo_combobox.get()
+        if file_type == "image" and alg:
+            process_image_realtime(alg)
+
+    ref_combo = ttk.Combobox(lf_eval, values=["Canny", "BSDS"], state="readonly", textvariable=ref_var)
+    ref_combo.pack(fill=tk.X, padx=6, pady=4)
+    ref_combo.bind("<<ComboboxSelected>>", on_ref_change)
+
+    def set_bsds_root():
+        global BSDS_ROOT
+        from tkinter import filedialog as _fd
+        path = _fd.askdirectory(title="选择BSDS500 data目录（包含 groundTruth/images 子目录）")
+        if path:
+            BSDS_ROOT = path
+            messagebox.showinfo("设置成功", f"BSDS根目录已设置：\n{BSDS_ROOT}")
+            # 切换后立即重算
+            alg = algo_combobox.get()
+            if file_type == "image" and alg:
+                process_image_realtime(alg)
+
+    bsds_btn = ttk.Button(lf_eval, text="设置BSDS根目录", command=set_bsds_root)
+    bsds_btn.pack(fill=tk.X, padx=6, pady=4)
+
     # 1. 顶部控制区（自动折行布局，窗口宽度不足时会换行而不是隐藏按钮）
     control_frame = ttk.Frame(root, padding="6")
-    control_frame.pack(fill=tk.X)
+    control_frame.pack(fill=tk.X, side=tk.TOP)
 
     # 自动折行布局函数（将 control_frame 的子控件以流式布局排列）
     def flow_layout(event=None):
@@ -937,7 +1231,7 @@ def init_gui():
     # 算法选择
     algo_label = ttk.Label(control_frame, text="选择算法：")
     algo_label.grid(row=0, column=0, padx=5, pady=5)
-    algo_options = ["Sobel", "彩色Sobel", "Canny", "彩色Canny", "Prewitt"]
+    algo_options = ["Sobel", "彩色Sobel", "Canny", "彩色Canny", "Prewitt", "HED"]
     algo_combobox = ttk.Combobox(control_frame, values=algo_options, state="readonly")
     algo_combobox.grid(row=0, column=1, padx=5, pady=5)
     # 算法切换时自动触发图片处理并保存当前设置
@@ -993,7 +1287,7 @@ def init_gui():
 
     # 2. 结果显示区
     result_frame = ttk.Frame(root, padding="10")
-    result_frame.pack(fill=tk.BOTH, expand=True)
+    result_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
     # 使 result_frame 内的三列在窗口拉伸时均分宽度
     try:
         result_frame.columnconfigure(0, weight=1)
@@ -1032,7 +1326,8 @@ def init_gui():
     # 3. 评估指标显示区
     metrics_frame = ttk.Frame(root, padding="10")
     metrics_frame.pack(fill=tk.X)
-    metrics_label = ttk.Label(metrics_frame, text="Precision: --\nRecall: --\nF1-Score: --", font=("Arial", 12))
+    # 初始显示占位，后续会显示单图指标或批量计算得到的 ODS/OIS
+    metrics_label = ttk.Label(metrics_frame, text="Precision: --\nRecall: --\nF1-Score: --\nODS_F1: --\nOIS_F1: --", font=("Arial", 12))
     metrics_label.pack(padx=10, pady=5, anchor=tk.W)
 
     # 初始化参数窗口
