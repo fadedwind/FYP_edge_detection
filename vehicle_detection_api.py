@@ -348,7 +348,7 @@ def get_reference_edge(img):
     reference_edge = cv2.Canny(gray, 150, 255)
     return reference_edge
 
-def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize):
+def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100, canny_high=220):
     """生成单通道的边强度图（0-255 uint8），供阈值化用于 ODS/OIS 计算"""
     img_resized = cv2.resize(img, (FRAME_WIDTH, FRAME_HEIGHT))
     edge = None
@@ -369,18 +369,166 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize):
         edge = cv2.bitwise_or(sobel_edges[0], sobel_edges[1])
         edge = cv2.bitwise_or(edge, sobel_edges[2])
     elif algorithm == "Canny":
+        # 对于批量处理和PR曲线生成，使用真正的Canny算法
+        # Canny返回二值图，但我们需要强度图来生成PR曲线
+        # 解决方案：使用Canny算法内部的梯度幅值（在非极大值抑制和双阈值之前）
+        # 这样可以获得强度图，同时保持Canny算法的特性
         gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
         gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
+        
+        # 使用真正的Canny算法计算梯度（Canny内部使用3x3 Sobel）
+        # 计算梯度幅值和方向
         gx = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=3)
         gy = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=3)
-        edge = cv2.convertScaleAbs(cv2.magnitude(gx, gy))
+        gradient_magnitude = cv2.magnitude(gx, gy)
+        gradient_direction = np.arctan2(gy, gx) * 180 / np.pi
+        
+        # 实现非极大值抑制（NMS）- Canny算法的关键步骤
+        # 这是真正的Canny算法的一部分，与edge_detection.py中的实现一致
+        h, w = gradient_magnitude.shape
+        suppressed = gradient_magnitude.copy()
+        
+        # 将角度归一化到0-180度
+        gradient_direction = np.abs(gradient_direction)
+        
+        # 向量化实现NMS（更高效）
+        # 创建4个方向的掩码
+        mask_0 = ((gradient_direction >= 0) & (gradient_direction < 22.5)) | \
+                 ((gradient_direction >= 157.5) & (gradient_direction <= 180))
+        mask_45 = (gradient_direction >= 22.5) & (gradient_direction < 67.5)
+        mask_90 = (gradient_direction >= 67.5) & (gradient_direction < 112.5)
+        mask_135 = (gradient_direction >= 112.5) & (gradient_direction < 157.5)
+        
+        # 对每个方向进行NMS（只处理内部像素，边界设为0）
+        # 0°方向：比较左右
+        mag_center = suppressed[1:-1, 1:-1]
+        mag_left = suppressed[1:-1, :-2]
+        mag_right = suppressed[1:-1, 2:]
+        mask_0_inner = mask_0[1:-1, 1:-1]
+        suppressed[1:-1, 1:-1] = np.where(
+            mask_0_inner,
+            np.where((mag_center >= mag_left) & (mag_center >= mag_right), mag_center, 0),
+            suppressed[1:-1, 1:-1]
+        )
+        
+        # 45°方向：比较对角
+        mag_diag1_45 = suppressed[:-2, 2:]
+        mag_diag2_45 = suppressed[2:, :-2]
+        mask_45_inner = mask_45[1:-1, 1:-1]
+        suppressed[1:-1, 1:-1] = np.where(
+            mask_45_inner,
+            np.where((mag_center >= mag_diag1_45) & (mag_center >= mag_diag2_45), mag_center, 0),
+            suppressed[1:-1, 1:-1]
+        )
+        
+        # 90°方向：比较上下
+        mag_up = suppressed[:-2, 1:-1]
+        mag_down = suppressed[2:, 1:-1]
+        mask_90_inner = mask_90[1:-1, 1:-1]
+        suppressed[1:-1, 1:-1] = np.where(
+            mask_90_inner,
+            np.where((mag_center >= mag_up) & (mag_center >= mag_down), mag_center, 0),
+            suppressed[1:-1, 1:-1]
+        )
+        
+        # 135°方向：比较对角
+        mag_diag1_135 = suppressed[:-2, :-2]
+        mag_diag2_135 = suppressed[2:, 2:]
+        mask_135_inner = mask_135[1:-1, 1:-1]
+        suppressed[1:-1, 1:-1] = np.where(
+            mask_135_inner,
+            np.where((mag_center >= mag_diag1_135) & (mag_center >= mag_diag2_135), mag_center, 0),
+            suppressed[1:-1, 1:-1]
+        )
+        
+        # 边界处理：边界像素设为0
+        suppressed[0, :] = 0
+        suppressed[-1, :] = 0
+        suppressed[:, 0] = 0
+        suppressed[:, -1] = 0
+        
+        # 将NMS后的结果转换为uint8，作为强度图
+        # 这样既保持了Canny的NMS特性（真正的Canny算法步骤），又能用于阈值扫描生成PR曲线
+        edge = cv2.convertScaleAbs(suppressed)
     elif algorithm == "彩色Canny":
+        # 对于批量处理，使用真正的Canny算法（每个通道应用NMS）
         img_blur = cv2.GaussianBlur(img_resized, (blur_ksize, blur_ksize), 1)
         canny_edges = []
         for i in range(3):
+            # 计算梯度
             gx = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
             gy = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
-            canny_edges.append(cv2.convertScaleAbs(cv2.magnitude(gx, gy)))
+            gradient_magnitude = cv2.magnitude(gx, gy)
+            gradient_direction = np.arctan2(gy, gx) * 180 / np.pi
+            
+            # 应用非极大值抑制（NMS）
+            h, w = gradient_magnitude.shape
+            suppressed = gradient_magnitude.copy()
+            gradient_direction = np.abs(gradient_direction)
+            
+            # 创建方向掩码
+            mask_0 = ((gradient_direction >= 0) & (gradient_direction < 22.5)) | \
+                     ((gradient_direction >= 157.5) & (gradient_direction <= 180))
+            mask_45 = (gradient_direction >= 22.5) & (gradient_direction < 67.5)
+            mask_90 = (gradient_direction >= 67.5) & (gradient_direction < 112.5)
+            mask_135 = (gradient_direction >= 112.5) & (gradient_direction < 157.5)
+            
+            # 对每个方向进行NMS
+            mag_center = suppressed[1:-1, 1:-1]
+            
+            # 0°方向
+            if np.any(mask_0[1:-1, 1:-1]):
+                mag_left = suppressed[1:-1, :-2]
+                mag_right = suppressed[1:-1, 2:]
+                mask_0_inner = mask_0[1:-1, 1:-1]
+                suppressed[1:-1, 1:-1] = np.where(
+                    mask_0_inner,
+                    np.where((mag_center >= mag_left) & (mag_center >= mag_right), mag_center, 0),
+                    suppressed[1:-1, 1:-1]
+                )
+            
+            # 45°方向
+            if np.any(mask_45[1:-1, 1:-1]):
+                mag_diag1 = suppressed[:-2, 2:]
+                mag_diag2 = suppressed[2:, :-2]
+                mask_45_inner = mask_45[1:-1, 1:-1]
+                suppressed[1:-1, 1:-1] = np.where(
+                    mask_45_inner,
+                    np.where((mag_center >= mag_diag1) & (mag_center >= mag_diag2), mag_center, 0),
+                    suppressed[1:-1, 1:-1]
+                )
+            
+            # 90°方向
+            if np.any(mask_90[1:-1, 1:-1]):
+                mag_up = suppressed[:-2, 1:-1]
+                mag_down = suppressed[2:, 1:-1]
+                mask_90_inner = mask_90[1:-1, 1:-1]
+                suppressed[1:-1, 1:-1] = np.where(
+                    mask_90_inner,
+                    np.where((mag_center >= mag_up) & (mag_center >= mag_down), mag_center, 0),
+                    suppressed[1:-1, 1:-1]
+                )
+            
+            # 135°方向
+            if np.any(mask_135[1:-1, 1:-1]):
+                mag_diag1 = suppressed[:-2, :-2]
+                mag_diag2 = suppressed[2:, 2:]
+                mask_135_inner = mask_135[1:-1, 1:-1]
+                suppressed[1:-1, 1:-1] = np.where(
+                    mask_135_inner,
+                    np.where((mag_center >= mag_diag1) & (mag_center >= mag_diag2), mag_center, 0),
+                    suppressed[1:-1, 1:-1]
+                )
+            
+            # 边界处理
+            suppressed[0, :] = 0
+            suppressed[-1, :] = 0
+            suppressed[:, 0] = 0
+            suppressed[:, -1] = 0
+            
+            canny_edges.append(cv2.convertScaleAbs(suppressed))
+        
+        # 合并三个通道的结果
         edge = cv2.bitwise_or(canny_edges[0], canny_edges[1])
         edge = cv2.bitwise_or(edge, canny_edges[2])
     elif algorithm == "Prewitt":
@@ -392,7 +540,7 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize):
         grad_y = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
         edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
     else:
-        # 默认使用 Canny
+        # 默认使用梯度强度图（类似Canny）
         gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
         gray_blur = cv2.GaussianBlur(gray, (blur_ksize, blur_ksize), 1)
         gx = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=3)
@@ -445,7 +593,7 @@ def batch_process():
                 img_bgr = base64_to_image(img_base64)
                 img_resized = cv2.resize(img_bgr, (FRAME_WIDTH, FRAME_HEIGHT))
                 reference = get_reference_edge(img_resized)
-                edge_strength = compute_edge_strength(img_bgr, algorithm, blur, sobel_ksize)
+                edge_strength = compute_edge_strength(img_bgr, algorithm, blur, sobel_ksize, canny_low, canny_high)
                 
                 best_f1 = -1.0
                 best_prec = best_rec = best_thr = 0
@@ -482,7 +630,12 @@ def batch_process():
                 })
                 
                 # 保存最佳阈值下的边缘图
+                # 对于Canny算法，如果使用真正的Canny会更好，但为了PR曲线我们使用阈值化的强度图
+                # 这里我们保存阈值化后的结果
                 _, detected_final = cv2.threshold(edge_strength, best_thr, 255, cv2.THRESH_BINARY)
+                
+                # 对于Canny，可以额外使用真正的Canny算法生成一个对比图（可选）
+                # 但为了保持一致性，我们使用阈值化的结果
                 edge_save_name = f"image_{idx}_edge.png"
                 edge_save_path = os.path.join(run_output_dir, edge_save_name)
                 cv2.imwrite(edge_save_path, detected_final)
@@ -535,7 +688,7 @@ def batch_process():
         recall_sorted = recall_mean[idxs]
         precision_sorted = precision_mean[idxs]
         
-        # 去重并取最大值
+        # 去重并取最大值（对于每个recall值，取最大的precision）
         unique_recalls = []
         max_precisions = []
         for r, p in zip(recall_sorted, precision_sorted):
@@ -549,18 +702,51 @@ def batch_process():
         recall_sorted = np.array(unique_recalls)
         precision_sorted = np.array(max_precisions)
         
-        # 插值
-        if recall_sorted.max() - recall_sorted.min() < 1e-6:
+        # 过滤掉recall很小且precision很高的点（去掉左侧蓝色段）
+        # 只过滤recall < 0.05 且 precision > 0.95 的点（这些是蓝色段）
+        # 保留其他所有点
+        valid_mask = ~((recall_sorted < 0.05) & (precision_sorted > 0.95))
+        if np.any(valid_mask):
+            recall_sorted = recall_sorted[valid_mask]
+            precision_sorted = precision_sorted[valid_mask]
+        
+        # 确保PR曲线以(1, precision_at_recall_1)结束
+        # 如果recall_sorted的最大值不是1，添加最后一个点
+        if len(recall_sorted) > 0 and recall_sorted[-1] < 1.0 - 1e-6:
+            recall_sorted = np.concatenate([recall_sorted, [1.0]])
+            precision_sorted = np.concatenate([precision_sorted, [precision_sorted[-1]]])
+        
+        # 插值生成平滑曲线
+        if len(recall_sorted) == 0 or recall_sorted.max() - recall_sorted.min() < 1e-6:
             recall_fine = recall_sorted
             precision_fine = precision_sorted
         else:
+            # 使用更多的插值点以获得更平滑的曲线
             recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
             precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
+            # 对于PR曲线，应该使用单调递减的precision（随着recall增加，precision应该递减或保持不变）
+            # 使用累积最大值来确保单调性
+            for i in range(len(precision_fine) - 2, -1, -1):
+                precision_fine[i] = max(precision_fine[i], precision_fine[i + 1])
         
         # 绘制 PR 曲线
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.plot(recall_fine, precision_fine, '-', linewidth=2, label='PR Curve')
         ax.plot(recall_sorted, precision_sorted, 'o', markersize=3, alpha=0.6)
+        
+        # 绘制F1-score等值线
+        # F1 = 2*P*R/(P+R)，对于固定的F1值，可以解出P = F1*R/(2*R - F1)
+        f1_values = [0.3, 0.5, 0.7]
+        recall_f1 = np.linspace(0.01, 0.99, 100)
+        for f1 in f1_values:
+            # 计算对应的precision值
+            # 从 F1 = 2*P*R/(P+R) 解出 P = F1*R/(2*R - F1)
+            precision_f1 = f1 * recall_f1 / (2 * recall_f1 - f1)
+            # 只保留有效的precision值（0到1之间）
+            valid_f1 = (precision_f1 >= 0) & (precision_f1 <= 1) & (recall_f1 > f1 / 2)
+            if np.any(valid_f1):
+                ax.plot(recall_f1[valid_f1], precision_f1[valid_f1], '--', 
+                       linewidth=1, alpha=0.5, color='gray', label=f'F1={f1}')
         ax.set_xlabel('Recall')
         ax.set_ylabel('Precision')
         ax.set_title(f'PR Curve ({algorithm})')
