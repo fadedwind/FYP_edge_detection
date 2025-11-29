@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Edge Detection Metrics</title>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$','$'], ['\\(','\\)']],
+        displayMath: [['$$','$$'], ['\\[','\\]']]
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.5; }
+    h1,h2 { color: #222; }
+    pre { background: #f7f7f7; padding: 12px; border-radius: 6px; }
+    section { margin-bottom: 28px; }
+    code { background:#f2f2f2; padding:2px 4px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>评估指标与 ODS/OIS（详解）</h1>
+
+  <section>
+    <h2>像素级指标</h2>
+    <p>在像素级边缘评估中，通常把检测结果二值化为检测集合 $D$（detected）和参考集合 $R$（reference/ground-truth）。定义：</p>
+    <p>$$TP=\sum_{x,y} (D\land R),\quad FP=\sum_{x,y} (D\land\lnot R),\quad FN=\sum_{x,y}(\lnot D \land R).$$</p>
+    <p>进而：</p>
+    <p>$$P=\frac{TP}{TP+FP},\quad R=\frac{TP}{TP+FN},\quad F_1=\frac{2PR}{P+R}.$$</p>
+  </section>
+
+  <section>
+    <h2>边界容差与匹配策略</h2>
+    <p>真实场景中，参考边缘可能是以亚像素或较细的线条提供，因此像素级严格比对会对轻微偏移非常敏感。常见改进：</p>
+    <ul>
+      <li>使用一定像素半径的容忍匹配（matching tolerance），在该半径内的检测像素可被视为匹配；</li>
+      <li>对边缘做细化（skeletonize）后再比较；</li>
+      <li>使用距离变换（distance transform）度量检测边到参考边的最近距离并据此评估。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>ODS / OIS</h2>
+    <p>- ODS（Optimal Dataset Scale）：对整个数据集选择一个全局阈值，使得到的平均 F1 最大；</p>
+    <p>- OIS（Optimal Image Scale）：对每张图像单独选择最优阈值（在该图上最大化 F1），然后在全数据集上对这些最优值取平均。</p>
+  </section>
+
+  <section>
+    <h2>PR 曲线与面积（AP）</h2>
+    <p>通过在不同阈值下计算 (P,R) 对可以得到 PR 曲线，曲线下面积（或精细插值下的 AP）用于衡量算法在不同阈值下的稳健性。ODS 更注重全局单一阈值下的表现，OIS 则反映对每图最佳参数的平均性能。</p>
+  </section>
+
+  <p><a href="edge_detection_docs.html">返回算法文档</a></p>
+</body>
+</html>

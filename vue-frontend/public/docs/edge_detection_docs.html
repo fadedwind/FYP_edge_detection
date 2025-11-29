@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Edge Detection Algorithm Reference</title>
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$','$'], ['\\(','\\)']],
+        displayMath: [['$$','$$'], ['\\[','\\]']]
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.5; }
+    h1,h2 { color: #222; }
+    pre { background: #f7f7f7; padding: 12px; border-radius: 6px; }
+    section { margin-bottom: 28px; }
+    code { background:#f2f2f2; padding:2px 4px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>边缘检测算法详细说明（含数学推导与调参建议）</h1>
+  <p>本页面包含常见边缘检测算法（Sobel, Prewitt, Canny, 彩色变体）的数学原理、离散实现要点、形态学与评估指标（Precision/Recall/F1/ODS/OIS）以及实践调参建议。公式使用 MathJax 渲染。</p>
+
+  <section id="Sobel">
+    <h2>Sobel</h2>
+    <p>Sobel 算子用于近似图像的一阶导数（梯度），用于检测图像亮度变化最显著的方向与强度。在实际实现中常先对原图进行高斯平滑以抑制噪声，得到平滑后的灰度图 $I_s$。</p>
+    <p>在连续域上，梯度可表示为偏导数：$$G_x=\frac{\partial I_s}{\partial x},\quad G_y=\frac{\partial I_s}{\partial y}.$$ 离散实现则通过与有限差分核（卷积核）相乘实现：</p>
+    <p>$$G_x = I_s * K_x,\quad G_y = I_s * K_y$$</p>
+    <p>常用 3x3 Sobel 核（在 x 方向）为：</p>
+    <p>$$K_x=\begin{bmatrix}-1&0&1\\-2&0&2\\-1&0&1\end{bmatrix},\qquad K_y=K_x^{T}.$$</p>
+    <p>计算方式通常为先用卷积得到水平与垂直分量 $G_x,G_y$，再计算幅值与方向：</p>
+    <p>$$M=\sqrt{G_x^2+G_y^2},\quad \theta=\arctan2(G_y,G_x).$$</p>
+    <p>实际工程中常用近似以加速计算：$$M\approx |G_x|+|G_y|,$$ 这在 OpenCV 的 convertScaleAbs/幅值合并中常见。</p>
+    <h3>阈值与二值化</h3>
+    <p>Sobel 给出的是连续的边强响应，通常需阈值化：$$D(x,y)=\begin{cases}255,&M(x,y)>t\\0,&\text{else}\end{cases}$$ 阈值 t 的选择决定了 precision/recall 的 trade-off。</p>
+    <h3>优缺点与实现细节</h3>
+    <ul>
+      <li>优点：实现简单、计算量小、对细节保留较好，适合实时处理。</li>
+      <li>缺点：对噪声敏感（因此要先做高斯平滑），输出为“厚边”，没有非极大值抑制（NMS），所以需要后处理来细化边（例如形态学或 NMS 近似）。</li>
+    </ul>
+    <h3>参数与工程建议</h3>
+    <p>- 平滑（Blur）：先做高斯模糊，sigma 大小与核尺寸决定对噪声抑制力度；<br>
+    - Sobel 核大小（Sobel_Ksize）：3 或 5 常用，核越大对低频结构更敏感；<br>
+    - 后处理：可使用闭/开运算、膨胀/腐蚀配合 Area 筛选来移除小噪点和连接边段。</p>
+  </section>
+
+  <section id="Prewitt">
+    <h2>Prewitt</h2>
+    <p>Prewitt 算子与 Sobel 相似，均为一阶差分算子，其卷积核相对更均匀，形式为：</p>
+    <p>$$K_x=\begin{bmatrix}-1&0&1\\-1&0&1\\-1&0&1\end{bmatrix},\quad K_y=K_x^{T}.$$</p>
+    <p>Prewitt 对于噪声的鲁棒性略弱于 Sobel（因为 Sobel 在中心行有更高权重），但实现更直接，常用于计算资源受限的场景。</p>
+    <h3>实现建议</h3>
+    <p>同样建议先进行高斯平滑，再计算梯度幅值并阈值化。若需要更细的边，可在阈值化后使用细化或骨架化算法。</p>
+  </section>
+
+  <section id="Canny">
+    <h2>Canny</h2>
+    <p>Canny 边缘检测是一种经典的多阶段算法，目标是得到细化、低噪声且连通的边缘线。其主要步骤与数学细节如下。</p>
+    <ol>
+      <li><strong>高斯平滑</strong>：使用标准差为 $\sigma$ 的高斯核对原图平滑，公式为
+        $$I_s(x,y)= (G_\sigma * I)(x,y) = \sum_{u,v} G_\sigma(u,v) I(x-u,y-v).$$ 目的在于去除高频噪声，避免差分放大噪声导致大量伪边。</li>
+      <li><strong>梯度计算</strong>：使用 Sobel 或差分算子计算梯度分量
+        $$G_x = I_s * K_x,\quad G_y = I_s * K_y,$$ 并计算幅值与方向
+        $$M=\sqrt{G_x^2+G_y^2},\quad \theta=\arctan2(G_y,G_x).$$
+      </li>
+      <li><strong>非极大值抑制（NMS）</strong>：沿梯度方向对幅值做局部极大值检测。对像素 $(x,y)$，在梯度方向附近按插值比较 $M(x,y)$ 与两个邻近像素的值，若不是局部极大值则抑制为 0，从而把“厚”边细化为接近单像素的曲线。</li>
+      <li><strong>双阈值连接（Hysteresis）</strong>：设低阈 $t_l$、高阈 $t_h$，分类：强像素 $M>t_h$、弱像素 $t_l<M\le t_h$、非边像素 $M\le t_l$。保留所有强像素，并把与强像素 8 邻域相连的弱像素也保留，其他弱像素丢弃。此步骤保证边的连通性并剔除孤立噪点。</li>
+    </ol>
+    <h3>数学/实现要点</h3>
+    <p>- NMS 插值：由于梯度方向通常不是精确的 0/45/90/135 度，实际实现中对两个比较点使用线性插值以估算梯度方向上的邻近幅值；</p>
+    <p>- Hysteresis 可视为在强像素上做连通域扩展（种子生长），弱像素被视为候选并依连通性决定保留；</p>
+    <p>- 高斯核大小与 $\sigma$、阈值 $(t_l,t_h)$ 的选择共同影响 precision/recall 的 trade-off：增大 $\sigma$ 与 $t_h$ 往往提高 precision，但可能丢失细弱边导致 recall 下降。</p>
+    <h3>调参建议与工程实现</h3>
+    <ul>
+      <li>常用经验：$t_l\approx 0.3\sim0.5\times t_h$；可依据图像动态范围和噪声水平微调；</li>
+      <li>先从较高的 $t_h$（例如 180–220）和中等 Blur（5–9）开始，观察 precision，再向下调低阈以恢复 recall；</li>
+      <li>实现细节：OpenCV 的 Canny 使用的内建 NMS 与 hysteresis，可直接复用；若需自定义可把计算出的梯度幅值作为输入并实现自定义 NMS/hysteresis 模块以便更精细控制。</li>
+    </ul>
+  </section>
+
+  <section id="ColorVariants">
+    <h2>彩色变体</h2>
+    <p>对彩色图像，一种常见做法是对每个颜色通道（R/G/B）独立计算边缘响应 $M_R,M_G,M_B$，然后按位或（bitwise_or）或取通道最大值合并：
+      $$M_{color}(x,y)=\max\{M_R,M_G,M_B\} \quad \text{或} \quad M_R\lor M_G\lor M_B.$$</p>
+    <p>优点在于能检测那些仅在单个通道上显著的颜色边界（例如红绿边界）；缺点是通道合并会放大噪声与伪边，需要更强的平滑或更高的阈值来抑制。</p>
+    <h3>其他策略</h3>
+    <ul>
+      <li>在色彩空间上操作：将图像转换到 Lab/YCrCb/HSV 等色彩空间，分别处理亮度通道与色差通道可以得到更灵活的边缘响应；</li>
+      <li>通道加权：按感兴趣的通道赋权合并，或者对每通道使用不同阈值以兼顾精度与召回；</li>
+      <li>先融合再检测：对彩色图像先做融合（例如灰度化或加权强度），再应用 Canny/Sobel，能减少通道间噪声累积，但可能丢掉纯色边。</li>
+    </ul>
+  </section>
+
+  <section id="Morphology">
+    <h2>形态学</h2>
+    <p>数学形态学提供了以结构元素（structuring element）为基础的二值图像处理工具，常用于边缘的后处理。基本运算包括膨胀（dilation）与腐蚀（erosion）：</p>
+    <p>设二值图像为 $B$，结构元素为 $S$，则膨胀定义为：</p>
+    <p>$$(B\oplus S)=\{x\mid (S)_x \cap B \neq \varnothing\},$$</p>
+    <p>而腐蚀定义为：</p>
+    <p>$$ (B\ominus S)=\{x\mid (S)_x \subseteq B\},$$</p>
+    <p>其中 $(S)_x$ 表示将结构元素 $S$ 平移到 $x$ 位置后覆盖的像素集合。</p>
+    <h3>组合运算</h3>
+    <p>- 开运算（Opening）：$B\circ S=(B\ominus S)\oplus S$，用于去除小的噪点且保持大结构不变；<br>
+    - 闭运算（Closing）：$B\bullet S=(B\oplus S)\ominus S$，用于填补小缝隙并连接近邻边段。</p>
+    <h3>工程建议</h3>
+    <p>- 结构元素大小（如 Trackbar 的 Dilate）越大，越倾向于连接近邻碎片，但也越可能把噪点扩展成可检测轮廓；</p>
+    <p>- 通常先用小幅度腐蚀去除孤点，再用膨胀恢复边宽（或直接用开/闭运算组合）；</p>
+    <p>- 在轮廓检测前使用开运算能显著提升 precision（移除小噪点），但可能损失掉较小的真实目标。</p>
+  </section>
+
+  <section id="Metrics">
+    <h2>评估指标及 ODS/OIS</h2>
+    <p>评估指标和 ODS/OIS 的说明已移到单独页面：
+      <a href="metrics.html">metrics.html（评估指标与 ODS/OIS 详情）</a>。此页面保留核心实践建议并指向详细评估说明。</p>
+  </section>
+
+  <section id="Practical">
+    <h2>实践建议（调参策略）</h2>
+    <ul>
+      <li>若目标是高 precision：使用 Canny，适度增加 Blur，增大 High，减小 Dilate，增大 Area。</li>
+      <li>若偏重速度：使用 Sobel，较小 Blur，较少阈值采样。</li>
+      <li>用 ODS/OIS 做小规模网格搜索选择折中参数。</li>
+    </ul>
+  </section>
+
+</body>
+</html>

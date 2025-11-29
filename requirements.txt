@@ -1,0 +1,9 @@
+opencv-python
+numpy
+Pillow
+matplotlib
+ultralytics
+timm
+# NOTE: torch installation may require a platform-specific wheel; see https://pytorch.org/ for the appropriate command for your CUDA/CPU environment.
+# Example (CPU): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+scipy

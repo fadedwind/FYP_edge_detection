@@ -1,0 +1,64 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.pytest_cache/
+.pytest_cache
+.coverage
+coverage.xml
+
+# Pyenv
+.python-version
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs and editors
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Output / results / artifacts
+output/
+results/
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints
+
+# Misc
+*.sqlite3
+*.db
+
+# Ignore AIchat or temporary chat outputs if desired
+AIchat/*.png
+AIchat/*.log
+ 
+# Ignore local model weights and large binary artifacts
+# Keep models/ in working copy for local testing, but don't push to remote
+models/
