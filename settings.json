@@ -1,7 +1,7 @@
 {
-  "algorithm": "HED",
+  "algorithm": "彩色Canny",
   "Blur": 7,
-  "Sobel_Ksize": 3,
+  "Sobel_Ksize": 4,
   "Dilate": 1,
   "Canny_Low": 100,
   "Canny_High": 220,

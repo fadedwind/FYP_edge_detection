@@ -241,29 +241,35 @@ def edge_detect():
         blur = int(data.get('blur', 7))
         canny_low = int(data.get('canny_low', 100))
         canny_high = int(data.get('canny_high', 220))
+        sobel_ksize = int(data.get('sobel_ksize', 3))
+        dilate_ksize = int(data.get('dilate_ksize', 1))
 
         # 解码图片
         img_bgr = base64_to_image(data['image'])
         img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-        # 预处理：模糊
+        # 预处理：核大小规范化（奇数且>=1）
         if blur % 2 == 0:
             blur += 1
         if blur < 1:
             blur = 1
+        if sobel_ksize % 2 == 0 or sobel_ksize < 1:
+            sobel_ksize = 3
+        if dilate_ksize % 2 == 0 or dilate_ksize < 1:
+            dilate_ksize = 1
 
         edge = None
         if algorithm == 'Sobel':
             gray_blur = cv2.GaussianBlur(img_gray, (blur, blur), 1)
-            gx = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=3)
-            gy = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=3)
+            gx = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
+            gy = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
             edge = cv2.convertScaleAbs(cv2.magnitude(gx, gy))
         elif algorithm == '彩色Sobel':
             img_blur = cv2.GaussianBlur(img_bgr, (blur, blur), 1)
             sobel_edges = []
             for i in range(3):
-                gx = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 1, 0, ksize=3)
-                gy = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 0, 1, ksize=3)
+                gx = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 1, 0, ksize=sobel_ksize)
+                gy = cv2.Sobel(img_blur[:, :, i], cv2.CV_64F, 0, 1, ksize=sobel_ksize)
                 sobel_edges.append(cv2.convertScaleAbs(cv2.magnitude(gx, gy)))
             edge = cv2.bitwise_or(sobel_edges[0], sobel_edges[1])
             edge = cv2.bitwise_or(edge, sobel_edges[2])
@@ -289,6 +295,11 @@ def edge_detect():
 
         if edge is None:
             edge = np.zeros_like(img_gray)
+
+        # 膨胀（与桌面版统一：可通过 dilate_ksize 调整粗细/连通性）
+        if dilate_ksize > 1:
+            kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
+            edge = cv2.dilate(edge, kernel, iterations=1)
 
         # 简单指标：非零边缘像素数
         edge_pixels = int((edge > 0).sum())

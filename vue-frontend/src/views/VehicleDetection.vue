@@ -7,7 +7,31 @@
 
     <main class="main-content">
       <div class="top-bar">
-        <button class="nav-btn" @click="$router.push('/')">🏠 返回主页（边缘检测）</button>
+        <button class="nav-btn" @click="showThemeSettings = !showThemeSettings">🎨 外观设置</button>
+        <button class="nav-btn" @click="goHome">🏠 返回主页（边缘检测）</button>
+      </div>
+
+      <!-- 外观设置面板 -->
+      <div v-if="showThemeSettings" class="theme-panel">
+        <div class="theme-header">
+          <h3>外观设置</h3>
+          <button class="close-btn" @click="showThemeSettings = false">×</button>
+        </div>
+        <div class="theme-content">
+          <div class="theme-item">
+            <label>背景颜色：</label>
+            <input type="color" v-model="customBgColor" @change="applyTheme" class="color-picker" />
+          </div>
+          <div class="theme-item">
+            <label>容器颜色：</label>
+            <input type="color" v-model="customContainerColor" @change="applyTheme" class="color-picker" />
+          </div>
+          <div class="theme-item">
+            <label>文字颜色：</label>
+            <input type="color" v-model="customTextColor" @change="applyTheme" class="color-picker" />
+          </div>
+          <button class="nav-btn" @click="resetTheme">恢复默认（黑金）</button>
+        </div>
       </div>
 
       <!-- 控制面板 -->
@@ -121,11 +145,23 @@ export default {
       isVehicle: false,
       features: null,
       algorithms: [],
-      processing: false
+      processing: false,
+      showThemeSettings: false,
+      customBgColor: '#0a0a0a',
+      customContainerColor: '#1a1a1a',
+      customTextColor: '#d4af37'
     }
   },
   mounted() {
     this.loadAlgorithms()
+    // 加载保存的主题设置
+    const savedBg = localStorage.getItem('customBgColor')
+    const savedContainer = localStorage.getItem('customContainerColor')
+    const savedText = localStorage.getItem('customTextColor')
+    if (savedBg) this.customBgColor = savedBg
+    if (savedContainer) this.customContainerColor = savedContainer
+    if (savedText) this.customTextColor = savedText
+    this.applyTheme()
   },
   methods: {
     async loadAlgorithms() {
@@ -155,6 +191,23 @@ export default {
         this.features = null
       }
       reader.readAsDataURL(file)
+    },
+    goHome() {
+      this.$router.push('/')
+    },
+    applyTheme() {
+      document.body.style.backgroundColor = this.customBgColor
+      document.documentElement.style.setProperty('--container-color', this.customContainerColor)
+      document.documentElement.style.setProperty('--text-color', this.customTextColor)
+      localStorage.setItem('customBgColor', this.customBgColor)
+      localStorage.setItem('customContainerColor', this.customContainerColor)
+      localStorage.setItem('customTextColor', this.customTextColor)
+    },
+    resetTheme() {
+      this.customBgColor = '#0a0a0a'
+      this.customContainerColor = '#1a1a1a'
+      this.customTextColor = '#d4af37'
+      this.applyTheme()
     },
     async startDetection() {
       if (!this.selectedImage) {
@@ -192,6 +245,77 @@ export default {
 
 <style scoped>
 @import '../styles/common.css';
+
+.theme-panel {
+  background: #1f1f1f;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 0;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+.theme-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  padding-bottom: 10px;
+}
+
+.theme-header h3 {
+  color: var(--text-color);
+  margin: 0;
+  font-size: 1.2em;
+  transition: color 0.3s ease;
+}
+
+.close-btn {
+  background: transparent;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  color: var(--text-color);
+  width: 30px;
+  height: 30px;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  border-color: var(--text-color);
+  background: rgba(212, 175, 55, 0.1);
+}
+
+.theme-content {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.theme-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-content label {
+  color: var(--text-color);
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.color-picker {
+  width: 60px;
+  height: 40px;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 0;
+  cursor: pointer;
+  background: #1a1a1a;
+}
 </style>
 
 
