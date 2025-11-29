@@ -411,7 +411,15 @@ export default {
         return { precision: 0, recall: 0, f1: 0 }
       }
       const result = this.batchResults.per_image_results.find(r => r.index === index)
-      return result || { precision: 0, recall: 0, f1: 0 }
+      if (!result) {
+        return { precision: 0, recall: 0, f1: 0 }
+      }
+      // 后端返回的字段名是 best_precision, best_recall, best_f1
+      return {
+        precision: result.best_precision || result.precision || 0,
+        recall: result.best_recall || result.recall || 0,
+        f1: result.best_f1 || result.f1 || 0
+      }
     }
   }
 }
