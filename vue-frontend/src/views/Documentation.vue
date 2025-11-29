@@ -1,7 +1,7 @@
 <template>
   <div class="documentation-page">
     <div class="doc-sidebar">
-      <h3>文档目录</h3>
+      <h3>{{ t('documentation.title') }}</h3>
       <ul class="doc-menu">
         <li 
           v-for="doc in documents" 
@@ -9,13 +9,13 @@
           :class="{ active: currentDoc === doc.id }"
           @click="loadDocument(doc.id)"
         >
-          {{ doc.title }}
+          {{ t(doc.titleKey) }}
         </li>
       </ul>
     </div>
     
     <div class="doc-content">
-      <div v-if="loading" class="loading">加载中...</div>
+      <div v-if="loading" class="loading">{{ t('documentation.loading') }}</div>
       <div v-else-if="error" class="error">{{ error }}</div>
       <div v-else v-html="docContent" class="doc-html"></div>
     </div>
@@ -24,14 +24,16 @@
 
 <script>
 import axios from 'axios'
+import { getCurrentLanguage, t as translate } from '../i18n'
 
 export default {
   name: 'Documentation',
+  inject: ['currentLanguage'],
   data() {
     return {
       documents: [
-        { id: 'edge_detection', title: '边缘检测算法详解', file: 'edge_detection_docs.html' },
-        { id: 'metrics', title: '评估指标与 ODS/OIS', file: 'metrics.html' }
+        { id: 'edge_detection', titleKey: 'documentation.edgeDetectionDocs', file: 'edge_detection_docs.html' },
+        { id: 'metrics', titleKey: 'documentation.metricsDocs', file: 'metrics.html' }
       ],
       currentDoc: 'edge_detection',
       docContent: '',
@@ -39,10 +41,29 @@ export default {
       error: null
     }
   },
+  computed: {
+    currentLang() {
+      try {
+        return this.currentLanguage && typeof this.currentLanguage === 'function' 
+          ? this.currentLanguage() 
+          : getCurrentLanguage()
+      } catch (e) {
+        return getCurrentLanguage()
+      }
+    }
+  },
+  watch: {
+    currentLang() {
+      this.$forceUpdate()
+    }
+  },
   mounted() {
     this.loadDocument('edge_detection')
   },
   methods: {
+    t(key) {
+      return translate(key, this.currentLang)
+    },
     async loadDocument(docId) {
       const doc = this.documents.find(d => d.id === docId)
       if (!doc) return

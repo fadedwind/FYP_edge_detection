@@ -4,7 +4,7 @@
       <button class="toggle-btn" @click="toggleSidebar">
         {{ isCollapsed ? '☰' : '✕' }}
       </button>
-      <h3 v-if="!isCollapsed" class="sidebar-title">导航</h3>
+      <h3 v-if="!isCollapsed" class="sidebar-title">{{ t('sidebar.title') }}</h3>
     </div>
     
     <nav class="sidebar-nav">
@@ -12,30 +12,30 @@
         class="nav-item" 
         :class="{ active: $route.path === '/' }"
         @click="navigate('/')"
-        :title="isCollapsed ? '边缘检测' : ''"
+        :title="isCollapsed ? t('sidebar.edgeDetection') : ''"
       >
         <span class="icon">🖼️</span>
-        <span v-if="!isCollapsed" class="label">边缘检测</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.edgeDetection') }}</span>
       </button>
       
       <button 
         class="nav-item" 
         :class="{ active: $route.path === '/vehicle' }"
         @click="navigate('/vehicle')"
-        :title="isCollapsed ? '汽车识别' : ''"
+        :title="isCollapsed ? t('sidebar.vehicleDetection') : ''"
       >
         <span class="icon">🚗</span>
-        <span v-if="!isCollapsed" class="label">汽车识别</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.vehicleDetection') }}</span>
       </button>
       
       <button 
         class="nav-item" 
         :class="{ active: $route.path === '/docs' }"
         @click="navigate('/docs')"
-        :title="isCollapsed ? '算法原理' : ''"
+        :title="isCollapsed ? t('sidebar.documentation') : ''"
       >
         <span class="icon">📚</span>
-        <span v-if="!isCollapsed" class="label">算法原理</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.documentation') }}</span>
       </button>
       
       <div class="divider" v-if="!isCollapsed"></div>
@@ -43,16 +43,27 @@
       <button 
         class="nav-item settings-btn" 
         @click="toggleThemeSettings"
-        :title="isCollapsed ? '外观设置' : ''"
+        :title="isCollapsed ? t('sidebar.appearanceSettings') : ''"
       >
         <span class="icon">🎨</span>
-        <span v-if="!isCollapsed" class="label">外观设置</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.appearanceSettings') }}</span>
+      </button>
+      
+      <button 
+        class="nav-item language-btn" 
+        @click="toggleLanguage"
+        :title="isCollapsed ? (getCurrentLang() === 'zh' ? 'English' : '中文') : ''"
+      >
+        <span class="icon">{{ getCurrentLang() === 'zh' ? '🇨🇳' : '🇺🇸' }}</span>
+        <span v-if="!isCollapsed" class="label">{{ getCurrentLang() === 'zh' ? 'English' : '中文' }}</span>
       </button>
     </nav>
   </div>
 </template>
 
 <script>
+import { getCurrentLanguage, setLanguage, t as translate } from '../i18n'
+
 export default {
   name: 'Sidebar',
   props: {
@@ -61,6 +72,7 @@ export default {
       default: false
     }
   },
+  inject: ['currentLanguage', 'setLanguage'],
   data() {
     return {
       isCollapsed: false
@@ -72,6 +84,18 @@ export default {
     }
   },
   methods: {
+    getCurrentLang() {
+      try {
+        return this.currentLanguage && typeof this.currentLanguage === 'function' 
+          ? this.currentLanguage() 
+          : getCurrentLanguage()
+      } catch (e) {
+        return getCurrentLanguage()
+      }
+    },
+    t(key) {
+      return translate(key, this.getCurrentLang())
+    },
     toggleSidebar() {
       this.isCollapsed = !this.isCollapsed
       localStorage.setItem('sidebarCollapsed', this.isCollapsed)
@@ -84,6 +108,16 @@ export default {
     },
     toggleThemeSettings() {
       this.$emit('toggle-theme-settings')
+    },
+    toggleLanguage() {
+      const currentLang = this.getCurrentLang()
+      const newLang = currentLang === 'zh' ? 'en' : 'zh'
+      setLanguage(newLang)
+      if (this.setLanguage) {
+        this.setLanguage(newLang)
+      }
+      // 触发全局更新
+      this.$forceUpdate()
     }
   },
   mounted() {
@@ -94,6 +128,7 @@ export default {
       this.isCollapsed = this.collapsed
     }
     this.$emit('sidebar-toggle', this.isCollapsed)
+    this.currentLanguage = getCurrentLanguage()
   }
 }
 </script>
@@ -220,6 +255,10 @@ export default {
 
 .settings-btn {
   margin-top: auto;
+}
+
+.language-btn {
+  margin-top: 8px;
 }
 
 @media (max-width: 768px) {

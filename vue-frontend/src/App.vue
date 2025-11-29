@@ -3,6 +3,7 @@
     <Sidebar 
       @toggle-theme-settings="toggleThemeSettings"
       @sidebar-toggle="handleSidebarToggle"
+      @language-changed="setLanguage"
       :collapsed="sidebarCollapsed"
     />
     <div class="main-wrapper" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
@@ -18,6 +19,7 @@
 <script>
 import Sidebar from './components/Sidebar.vue'
 import ThemeSettingsPanel from './components/ThemeSettingsPanel.vue'
+import { getCurrentLanguage, setLanguage } from './i18n'
 
 export default {
   name: 'App',
@@ -28,7 +30,19 @@ export default {
   data() {
     return {
       showThemeSettings: false,
-      sidebarCollapsed: false
+      sidebarCollapsed: false,
+      currentLanguage: getCurrentLanguage()
+    }
+  },
+  provide() {
+    const self = this
+    return {
+      currentLanguage() {
+        return self.currentLanguage
+      },
+      setLanguage(lang) {
+        self.setLanguage(lang)
+      }
     }
   },
   methods: {
@@ -37,6 +51,12 @@ export default {
     },
     handleSidebarToggle(collapsed) {
       this.sidebarCollapsed = collapsed
+    },
+    setLanguage(lang) {
+      this.currentLanguage = lang
+      setLanguage(lang)
+      // 触发全局更新
+      this.$forceUpdate()
     }
   },
   mounted() {
@@ -44,20 +64,26 @@ export default {
     if (saved !== null) {
       this.sidebarCollapsed = saved === 'true'
     }
+    this.currentLanguage = getCurrentLanguage()
   }
 }
 </script>
 
 <style>
+@import './styles/common.css';
+
 .app-container {
   display: flex;
   min-height: 100vh;
+  background: #0a0a0a;
 }
 
 .main-wrapper {
   flex: 1;
   margin-left: 220px;
   transition: margin-left 0.3s ease;
+  background: #0a0a0a;
+  min-height: 100vh;
 }
 
 .main-wrapper.sidebar-collapsed {

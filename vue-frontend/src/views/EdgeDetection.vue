@@ -1,8 +1,8 @@
 <template>
   <div class="page-container">
     <header class="header">
-      <h1>🖼️ 图像边缘检测主页</h1>
-      <p class="subtitle">支持 Sobel / Canny / Prewitt / HED 等多种边缘检测算法</p>
+      <h1>🖼️ {{ t('edgeDetection.title') }}</h1>
+      <p class="subtitle">{{ t('edgeDetection.subtitle') }}</p>
     </header>
 
     <main class="main-content">
@@ -10,7 +10,7 @@
       <!-- 控制面板 -->
       <div class="control-panel">
         <div class="control-group">
-          <label for="ed-algorithm">边缘检测算法：</label>
+          <label for="ed-algorithm">{{ t('edgeDetection.algorithm') }}</label>
           <select id="ed-algorithm" v-model="algorithm" class="select-input">
             <option v-for="algo in algoOptions" :key="algo" :value="algo">{{ algo }}</option>
           </select>
@@ -18,11 +18,11 @@
 
         <!-- 更多参数按钮 -->
         <button class="nav-btn" @click="showAdvanced = !showAdvanced">
-          {{ showAdvanced ? '收起更多参数' : '更多参数调整' }}
+          {{ showAdvanced ? t('edgeDetection.collapseParams') : t('edgeDetection.moreParams') }}
         </button>
 
         <div class="control-group">
-          <label for="blur">模糊核大小：</label>
+          <label for="blur">{{ t('edgeDetection.blur') }}</label>
           <input
             id="blur"
             type="range"
@@ -36,7 +36,7 @@
         </div>
 
         <div class="control-group" v-if="algorithm.includes('Canny')">
-          <label> Canny 阈值：</label>
+          <label>{{ t('edgeDetection.cannyThreshold') }}</label>
           <input
             type="number"
             v-model.number="cannyLow"
@@ -63,7 +63,7 @@
             accept="image/*"
             class="file-input"
           />
-          <label for="edge-file-input" class="file-label">📁 选择图片</label>
+          <label for="edge-file-input" class="file-label">{{ t('edgeDetection.selectImage') }}</label>
         </div>
 
         <button
@@ -71,19 +71,19 @@
           :disabled="!selectedImage || processing"
           class="detect-btn"
         >
-          {{ processing ? '处理中...' : '✨ 开始边缘检测' }}
+          {{ processing ? t('edgeDetection.processing') : t('edgeDetection.startDetection') }}
         </button>
       </div>
 
       <!-- 高级参数面板（与桌面版参数对应，无预设） -->
       <div v-if="showAdvanced" class="advanced-panel">
         <div class="advanced-header">
-          <span>高级参数（与桌面版 Trackbar 对应）：</span>
+          <span>{{ t('edgeDetection.advancedParams') }}</span>
         </div>
 
         <div class="advanced-grid">
           <div class="advanced-item">
-            <label>Sobel_Ksize（奇数）：{{ sobelKsize }}</label>
+            <label>{{ t('edgeDetection.sobelKsize') }}{{ sobelKsize }}</label>
             <input
               type="range"
               min="1"
@@ -95,7 +95,7 @@
           </div>
 
           <div class="advanced-item">
-            <label>Blur（模糊核）：{{ blur }}</label>
+            <label>{{ t('edgeDetection.blurKernel') }}{{ blur }}</label>
             <input
               type="range"
               min="1"
@@ -107,7 +107,7 @@
           </div>
 
           <div class="advanced-item">
-            <label>Dilate（膨胀核）：{{ dilateKsize }}</label>
+            <label>{{ t('edgeDetection.dilateKernel') }}{{ dilateKsize }}</label>
             <input
               type="range"
               min="1"
@@ -119,7 +119,7 @@
           </div>
 
           <div class="advanced-item">
-            <label>Canny_Low：{{ cannyLow }}</label>
+            <label>{{ t('edgeDetection.cannyLow') }}{{ cannyLow }}</label>
             <input
               type="range"
               min="0"
@@ -131,7 +131,7 @@
           </div>
 
           <div class="advanced-item">
-            <label>Canny_High：{{ cannyHigh }}</label>
+            <label>{{ t('edgeDetection.cannyHigh') }}{{ cannyHigh }}</label>
             <input
               type="range"
               min="0"
@@ -143,7 +143,7 @@
           </div>
 
           <div class="advanced-item">
-            <label>Area（轮廓最小面积，示意参数）：{{ areaMin }}</label>
+            <label>{{ t('edgeDetection.areaMin') }}{{ areaMin }}</label>
             <input
               type="range"
               min="0"
@@ -159,18 +159,18 @@
       <!-- 图片展示区 -->
       <div class="image-section">
         <div class="image-box">
-          <h3>原始图片</h3>
+          <h3>{{ t('edgeDetection.originalImage') }}</h3>
           <div class="image-container">
-            <img v-if="selectedImage" :src="selectedImage" alt="原图" class="result-image" />
-            <div v-else class="placeholder">请选择一张图片</div>
+            <img v-if="selectedImage" :src="selectedImage" :alt="t('edgeDetection.originalImage')" class="result-image" />
+            <div v-else class="placeholder">{{ t('edgeDetection.selectImagePlaceholder') }}</div>
           </div>
         </div>
 
         <div class="image-box">
-          <h3>边缘检测结果</h3>
+          <h3>{{ t('edgeDetection.edgeResult') }}</h3>
           <div class="image-container">
-            <img v-if="edgeImage" :src="edgeImage" alt="边缘图" class="result-image" />
-            <div v-else class="placeholder">边缘结果将显示在这里</div>
+            <img v-if="edgeImage" :src="edgeImage" :alt="t('edgeDetection.edgeResult')" class="result-image" />
+            <div v-else class="placeholder">{{ t('edgeDetection.edgeResultPlaceholder') }}</div>
           </div>
         </div>
       </div>
@@ -178,12 +178,12 @@
       <!-- 指标展示（可选） -->
       <div class="result-section" v-if="metrics && !batchResults">
         <div class="result-card">
-          <h3>评估指标</h3>
+          <h3>{{ t('edgeDetection.metrics') }}</h3>
           <div class="metrics-display">
-            <p>非零边缘像素数：<strong>{{ metrics.edge_pixels }}</strong></p>
-            <p v-if="metrics.precision !== undefined">Precision：<strong>{{ metrics.precision }}</strong></p>
-            <p v-if="metrics.recall !== undefined">Recall：<strong>{{ metrics.recall }}</strong></p>
-            <p v-if="metrics.f1 !== undefined">F1-Score：<strong>{{ metrics.f1 }}</strong></p>
+            <p>{{ t('edgeDetection.edgePixels') }}<strong>{{ metrics.edge_pixels }}</strong></p>
+            <p v-if="metrics.precision !== undefined">{{ t('edgeDetection.precision') }}：<strong>{{ metrics.precision }}</strong></p>
+            <p v-if="metrics.recall !== undefined">{{ t('edgeDetection.recall') }}：<strong>{{ metrics.recall }}</strong></p>
+            <p v-if="metrics.f1 !== undefined">{{ t('edgeDetection.f1Score') }}：<strong>{{ metrics.f1 }}</strong></p>
           </div>
         </div>
       </div>
@@ -191,9 +191,9 @@
       <!-- 批量处理区域 -->
       <div class="batch-section">
         <div class="batch-header">
-          <h3>📁 批量处理</h3>
+          <h3>{{ t('edgeDetection.batchProcessing') }}</h3>
           <button class="nav-btn" @click="showBatchPanel = !showBatchPanel">
-            {{ showBatchPanel ? '收起批量处理' : '展开批量处理' }}
+            {{ showBatchPanel ? t('edgeDetection.collapseBatch') : t('edgeDetection.expandBatch') }}
           </button>
         </div>
 
@@ -208,8 +208,8 @@
               multiple
               class="file-input"
             />
-            <label for="batch-file-input" class="file-label">📁 选择多张图片（可多选）</label>
-            <span v-if="batchFiles.length > 0" class="file-count">已选择 {{ batchFiles.length }} 张图片</span>
+            <label for="batch-file-input" class="file-label">{{ t('edgeDetection.selectMultipleImages') }}</label>
+            <span v-if="batchFiles.length > 0" class="file-count">{{ t('edgeDetection.selectedCount').replace('{count}', batchFiles.length) }}</span>
           </div>
 
           <button
@@ -217,44 +217,44 @@
             :disabled="batchFiles.length === 0 || batchProcessing"
             class="detect-btn"
           >
-            {{ batchProcessing ? '处理中...' : '🚀 开始批量处理' }}
+            {{ batchProcessing ? t('edgeDetection.batchProcessingStatus') : t('edgeDetection.startBatch') }}
           </button>
 
           <!-- 批量处理结果 -->
           <div v-if="batchResults" class="batch-results">
             <div class="result-card">
-              <h3>批量处理结果</h3>
+              <h3>{{ t('edgeDetection.batchResults') }}</h3>
               <div class="metrics-grid">
                 <div class="metric-item">
-                  <h4>ODS (Optimal Dataset Scale)</h4>
-                  <p>阈值: <strong>{{ batchResults.metrics.ods.threshold }}</strong></p>
-                  <p>Precision: <strong>{{ batchResults.metrics.ods.precision }}</strong></p>
-                  <p>Recall: <strong>{{ batchResults.metrics.ods.recall }}</strong></p>
-                  <p>F1-Score: <strong>{{ batchResults.metrics.ods.f1 }}</strong></p>
+                  <h4>{{ t('edgeDetection.ods') }}</h4>
+                  <p>{{ t('edgeDetection.threshold') }}: <strong>{{ batchResults.metrics.ods.threshold }}</strong></p>
+                  <p>{{ t('edgeDetection.precision') }}: <strong>{{ batchResults.metrics.ods.precision }}</strong></p>
+                  <p>{{ t('edgeDetection.recall') }}: <strong>{{ batchResults.metrics.ods.recall }}</strong></p>
+                  <p>{{ t('edgeDetection.f1Score') }}: <strong>{{ batchResults.metrics.ods.f1 }}</strong></p>
                 </div>
                 <div class="metric-item">
-                  <h4>OIS (Optimal Image Scale)</h4>
-                  <p>Precision: <strong>{{ batchResults.metrics.ois.precision }}</strong></p>
-                  <p>Recall: <strong>{{ batchResults.metrics.ois.recall }}</strong></p>
-                  <p>F1-Score: <strong>{{ batchResults.metrics.ois.f1 }}</strong></p>
+                  <h4>{{ t('edgeDetection.ois') }}</h4>
+                  <p>{{ t('edgeDetection.precision') }}: <strong>{{ batchResults.metrics.ois.precision }}</strong></p>
+                  <p>{{ t('edgeDetection.recall') }}: <strong>{{ batchResults.metrics.ois.recall }}</strong></p>
+                  <p>{{ t('edgeDetection.f1Score') }}: <strong>{{ batchResults.metrics.ois.f1 }}</strong></p>
                 </div>
               </div>
 
               <!-- PR 曲线 -->
               <div v-if="batchResults.pr_curve" class="pr-curve-container">
-                <h4>PR 曲线</h4>
-                <img :src="batchResults.pr_curve" alt="PR Curve" class="pr-curve-image" />
+                <h4>{{ t('edgeDetection.prCurve') }}</h4>
+                <img :src="batchResults.pr_curve" :alt="t('edgeDetection.prCurve')" class="pr-curve-image" />
               </div>
 
               <!-- 处理结果列表 -->
               <div class="processed-images-list">
-                <h4>处理结果（共 {{ batchResults.processed_count }} 张）</h4>
+                <h4>{{ t('edgeDetection.processedResults').replace('{count}', batchResults.processed_count) }}</h4>
                 <div class="images-grid">
                   <div v-for="img in batchResults.processed_images" :key="img.index" class="processed-image-item">
                     <img :src="img.edge_image" :alt="img.filename" class="processed-thumbnail" />
                     <p class="image-metrics">
-                      P: {{ getImageMetrics(img.index).precision }} | 
-                      R: {{ getImageMetrics(img.index).recall }} | 
+                      {{ t('edgeDetection.precision').substring(0, 1) }}: {{ getImageMetrics(img.index).precision }} | 
+                      {{ t('edgeDetection.recall').substring(0, 1) }}: {{ getImageMetrics(img.index).recall }} | 
                       F1: {{ getImageMetrics(img.index).f1 }}
                     </p>
                   </div>
@@ -270,9 +270,11 @@
 
 <script>
 import axios from 'axios'
+import { getCurrentLanguage, t as translate } from '../i18n'
 
 export default {
   name: 'EdgeDetection',
+  inject: ['currentLanguage'],
   data() {
     return {
       algorithm: 'Canny',
@@ -294,16 +296,27 @@ export default {
       batchResults: null
     }
   },
-  mounted() {
-    // 加载保存的主题设置
-    const savedBg = localStorage.getItem('customBgColor')
-    const savedContainer = localStorage.getItem('customContainerColor')
-    const savedText = localStorage.getItem('customTextColor')
-    if (savedBg) document.body.style.backgroundColor = savedBg
-    if (savedContainer) document.documentElement.style.setProperty('--container-color', savedContainer)
-    if (savedText) document.documentElement.style.setProperty('--text-color', savedText)
+  computed: {
+    currentLang() {
+      try {
+        return this.currentLanguage && typeof this.currentLanguage === 'function' 
+          ? this.currentLanguage() 
+          : getCurrentLanguage()
+      } catch (e) {
+        return getCurrentLanguage()
+      }
+    }
+  },
+  watch: {
+    currentLang() {
+      // 当语言改变时强制更新
+      this.$forceUpdate()
+    }
   },
   methods: {
+    t(key) {
+      return translate(key, this.currentLang)
+    },
     handleFileSelect(event) {
       const file = event.target.files[0]
       if (!file) return
@@ -317,7 +330,7 @@ export default {
     },
     async runEdgeDetection() {
       if (!this.selectedImage) {
-        alert('请先选择图片！')
+        alert(this.t('edgeDetection.selectImagePlaceholder'))
         return
       }
       this.processing = true
@@ -336,11 +349,11 @@ export default {
           this.edgeImage = response.data.images.edge
           this.metrics = response.data.metrics
         } else {
-          alert('边缘检测失败：' + (response.data.error || '未知错误'))
+          alert('Edge detection failed: ' + (response.data.error || 'Unknown error'))
         }
       } catch (error) {
-        console.error('边缘检测错误:', error)
-        alert('边缘检测失败：' + (error.response?.data?.error || error.message))
+        console.error('Edge detection error:', error)
+        alert('Edge detection failed: ' + (error.response?.data?.error || error.message))
       } finally {
         this.processing = false
       }
@@ -351,7 +364,7 @@ export default {
     },
     async startBatchProcess() {
       if (this.batchFiles.length === 0) {
-        alert('请先选择图片！')
+        alert(this.t('edgeDetection.selectImagePlaceholder'))
         return
       }
 

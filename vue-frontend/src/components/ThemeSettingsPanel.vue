@@ -2,36 +2,55 @@
   <div class="theme-settings-overlay" @click.self="close">
     <div class="theme-settings-panel">
       <div class="theme-header">
-        <h3>外观设置</h3>
+        <h3>{{ t('appearanceSettings.title') }}</h3>
         <button class="close-btn" @click="close">×</button>
       </div>
       <div class="theme-content">
         <div class="theme-item">
-          <label>背景颜色：</label>
+          <label>{{ t('appearanceSettings.backgroundColor') }}</label>
           <input type="color" v-model="customBgColor" @change="applyTheme" class="color-picker" />
         </div>
         <div class="theme-item">
-          <label>容器颜色：</label>
+          <label>{{ t('appearanceSettings.containerColor') }}</label>
           <input type="color" v-model="customContainerColor" @change="applyTheme" class="color-picker" />
         </div>
         <div class="theme-item">
-          <label>文字颜色：</label>
+          <label>{{ t('appearanceSettings.textColor') }}</label>
           <input type="color" v-model="customTextColor" @change="applyTheme" class="color-picker" />
         </div>
-        <button class="nav-btn" @click="resetTheme">恢复默认（黑金）</button>
+        <button class="nav-btn" @click="resetTheme">{{ t('appearanceSettings.resetDefault') }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import { getCurrentLanguage, t as translate } from '../i18n'
+
 export default {
   name: 'ThemeSettingsPanel',
+  inject: ['currentLanguage'],
   data() {
     return {
       customBgColor: '#0a0a0a',
       customContainerColor: '#1a1a1a',
       customTextColor: '#d4af37'
+    }
+  },
+  computed: {
+    currentLang() {
+      try {
+        return this.currentLanguage && typeof this.currentLanguage === 'function' 
+          ? this.currentLanguage() 
+          : getCurrentLanguage()
+      } catch (e) {
+        return getCurrentLanguage()
+      }
+    }
+  },
+  watch: {
+    currentLang() {
+      this.$forceUpdate()
     }
   },
   mounted() {
@@ -44,6 +63,9 @@ export default {
     this.applyTheme()
   },
   methods: {
+    t(key) {
+      return translate(key, this.currentLang)
+    },
     close() {
       this.$emit('close')
     },
