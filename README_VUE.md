@@ -38,7 +38,7 @@ python vehicle_detection_api.py
 
 ```bash
 cd vue-frontend
-npm install
+
 ```
 
 ### 4. 启动前端开发服务器
@@ -136,4 +136,7 @@ npm run dev
 ## 📄 许可证
 
 与原项目保持一致。
+
+
+
 

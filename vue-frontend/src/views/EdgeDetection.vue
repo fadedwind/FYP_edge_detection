@@ -54,7 +54,27 @@
           />
         </div>
 
+        <!-- 模式切换 -->
         <div class="control-group">
+          <label>{{ t('edgeDetection.imageMode') }} / {{ t('edgeDetection.videoMode') }}</label>
+          <div class="mode-toggle">
+            <button 
+              @click="inputMode = 'image'" 
+              :class="['mode-btn', { active: inputMode === 'image' }]"
+            >
+              {{ t('edgeDetection.imageMode') }}
+            </button>
+            <button 
+              @click="inputMode = 'video'" 
+              :class="['mode-btn', { active: inputMode === 'video' }]"
+            >
+              {{ t('edgeDetection.videoMode') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 图片输入 -->
+        <div v-if="inputMode === 'image'" class="control-group">
           <input
             type="file"
             id="edge-file-input"
@@ -66,7 +86,21 @@
           <label for="edge-file-input" class="file-label">{{ t('edgeDetection.selectImage') }}</label>
         </div>
 
+        <!-- 视频输入 -->
+        <div v-if="inputMode === 'video'" class="control-group">
+          <input
+            type="file"
+            id="edge-video-input"
+            ref="videoInput"
+            @change="handleVideoSelect"
+            accept="video/*"
+            class="file-input"
+          />
+          <label for="edge-video-input" class="file-label">{{ t('edgeDetection.selectVideo') }}</label>
+        </div>
+
         <button
+          v-if="inputMode === 'image'"
           @click="runEdgeDetection"
           :disabled="!selectedImage || processing"
           class="detect-btn"
@@ -157,7 +191,7 @@
       </div>
 
       <!-- 图片展示区 -->
-      <div class="image-section">
+      <div v-if="inputMode === 'image'" class="image-section">
         <div class="image-box">
           <h3>{{ t('edgeDetection.originalImage') }}</h3>
           <div class="image-container">
@@ -167,10 +201,62 @@
         </div>
 
         <div class="image-box">
-          <h3>{{ t('edgeDetection.edgeResult') }}</h3>
+          <div class="image-box-header">
+            <h3>{{ t('edgeDetection.edgeResult') }}</h3>
+            <button
+              v-if="edgeImage"
+              @click="saveEdgeImage"
+              class="save-btn"
+              :title="t('edgeDetection.saveImage')"
+            >
+              {{ t('edgeDetection.saveImage') }}
+            </button>
+          </div>
           <div class="image-container">
             <img v-if="edgeImage" :src="edgeImage" :alt="t('edgeDetection.edgeResult')" class="result-image" />
             <div v-else class="placeholder">{{ t('edgeDetection.edgeResultPlaceholder') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视频展示区 -->
+      <div v-if="inputMode === 'video'" class="video-section">
+        <div class="video-box">
+          <h3>{{ t('edgeDetection.originalImage') }}</h3>
+          <div class="video-container">
+            <video
+              v-if="selectedVideo"
+              ref="videoPlayer"
+              :src="selectedVideo"
+              @loadedmetadata="onVideoLoaded"
+              @timeupdate="onVideoTimeUpdate"
+              @play="onVideoPlay"
+              @pause="onVideoPause"
+              class="video-player"
+              controls
+            ></video>
+            <div v-else class="placeholder">{{ t('edgeDetection.selectVideoPlaceholder') }}</div>
+          </div>
+        </div>
+
+        <div class="video-box">
+          <div class="image-box-header">
+            <h3>{{ t('edgeDetection.edgeResult') }}</h3>
+            <button
+              v-if="selectedVideo && hasVideoEdgeResult"
+              @click="saveVideoFrame"
+              class="save-btn"
+              :title="t('edgeDetection.saveImage')"
+            >
+              {{ t('edgeDetection.saveImage') }}
+            </button>
+          </div>
+          <div class="video-container">
+            <canvas
+              ref="edgeCanvas"
+              class="edge-canvas"
+            ></canvas>
+            <div v-if="!selectedVideo" class="placeholder">{{ t('edgeDetection.edgeResultPlaceholder') }}</div>
           </div>
         </div>
       </div>
@@ -285,7 +371,9 @@ export default {
       sobelKsize: 3,
       dilateKsize: 1,
       areaMin: 8000,
+      inputMode: 'image', // 'image' or 'video'
       selectedImage: null,
+      selectedVideo: null,
       edgeImage: null,
       metrics: null,
       processing: false,
@@ -293,7 +381,11 @@ export default {
       showBatchPanel: false,
       batchFiles: [],
       batchProcessing: false,
-      batchResults: null
+      batchResults: null,
+      videoProcessing: false,
+      videoFrameInterval: null,
+      lastProcessedFrame: 0,
+      hasVideoEdgeResult: false
     }
   },
   computed: {
@@ -327,6 +419,141 @@ export default {
         this.metrics = null
       }
       reader.readAsDataURL(file)
+    },
+    handleVideoSelect(event) {
+      const file = event.target.files[0]
+      if (!file) return
+      
+      // 停止之前的处理
+      this.stopVideoProcessing()
+      this.hasVideoEdgeResult = false
+      
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        this.selectedVideo = e.target.result
+        this.$nextTick(() => {
+          if (this.$refs.videoPlayer) {
+            this.$refs.videoPlayer.load()
+          }
+        })
+      }
+      reader.readAsDataURL(file)
+    },
+    onVideoLoaded() {
+      // 视频加载完成，初始化canvas
+      if (this.$refs.videoPlayer && this.$refs.edgeCanvas) {
+        const video = this.$refs.videoPlayer
+        const canvas = this.$refs.edgeCanvas
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+      }
+    },
+    onVideoTimeUpdate() {
+      // 视频时间更新，使用requestAnimationFrame优化性能
+      if (this.videoProcessing && this.$refs.videoPlayer) {
+        const video = this.$refs.videoPlayer
+        if (!video.paused && !video.ended) {
+          // 使用requestAnimationFrame来平滑处理
+          if (!this.videoFrameInterval) {
+            this.processVideoFrameLoop()
+          }
+        }
+      }
+    },
+    onVideoPlay() {
+      // 开始播放时启动边缘检测
+      this.startVideoProcessing()
+    },
+    onVideoPause() {
+      // 暂停时停止处理
+      this.stopVideoProcessing()
+    },
+    async startVideoProcessing() {
+      if (!this.selectedVideo || !this.$refs.videoPlayer) return
+      
+      this.videoProcessing = true
+      this.lastProcessedFrame = -1
+      // 立即处理第一帧
+      await this.processVideoFrame()
+    },
+    stopVideoProcessing() {
+      this.videoProcessing = false
+      if (this.videoFrameInterval) {
+        cancelAnimationFrame(this.videoFrameInterval)
+        this.videoFrameInterval = null
+      }
+    },
+    async processVideoFrameLoop() {
+      if (!this.videoProcessing || !this.$refs.videoPlayer) {
+        this.videoFrameInterval = null
+        return
+      }
+      
+      const video = this.$refs.videoPlayer
+      if (video.paused || video.ended) {
+        this.videoFrameInterval = null
+        return
+      }
+      
+      // 处理当前帧
+      await this.processVideoFrame()
+      
+      // 继续下一帧（限制处理频率，约每3帧处理一次，约30fps的视频处理为10fps）
+      this.videoFrameInterval = requestAnimationFrame(() => {
+        this.processVideoFrameLoop()
+      })
+    },
+    async processVideoFrame() {
+      if (!this.$refs.videoPlayer || !this.$refs.edgeCanvas) return
+      
+      const video = this.$refs.videoPlayer
+      const canvas = this.$refs.edgeCanvas
+      const ctx = canvas.getContext('2d')
+      
+      // 检查视频是否已加载
+      if (video.readyState < 2) return // HAVE_CURRENT_DATA
+      
+      // 从video元素获取当前帧
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = video.videoWidth || 640
+      tempCanvas.height = video.videoHeight || 480
+      const tempCtx = tempCanvas.getContext('2d')
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height)
+      
+      // 转换为base64
+      const frameData = tempCanvas.toDataURL('image/jpeg', 0.8) // 使用JPEG压缩减少数据量
+      
+      try {
+        // 调用边缘检测API
+        const response = await axios.post('/api/edge-detect', {
+          image: frameData,
+          algorithm: this.algorithm,
+          blur: this.blur,
+          canny_low: this.cannyLow,
+          canny_high: this.cannyHigh,
+          sobel_ksize: this.sobelKsize,
+          dilate_ksize: this.dilateKsize,
+          area_min: this.areaMin
+        })
+        
+        if (response.data.success && response.data.images.edge) {
+          // 将边缘检测结果绘制到canvas
+          const img = new Image()
+          img.onload = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+            this.hasVideoEdgeResult = true
+          }
+          img.onerror = () => {
+            console.error('Failed to load edge image')
+            this.hasVideoEdgeResult = false
+          }
+          img.src = response.data.images.edge
+        }
+      } catch (error) {
+        console.error('Video frame processing error:', error)
+        // 错误时不中断处理
+      }
     },
     async runEdgeDetection() {
       if (!this.selectedImage) {
@@ -420,7 +647,71 @@ export default {
         recall: result.best_recall || result.recall || 0,
         f1: result.best_f1 || result.f1 || 0
       }
+    },
+    saveEdgeImage() {
+      if (!this.edgeImage) {
+        alert(this.t('edgeDetection.saveError'))
+        return
+      }
+      
+      try {
+        // 从base64数据创建下载链接
+        const link = document.createElement('a')
+        link.href = this.edgeImage
+        link.download = `edge_detection_${this.algorithm}_${new Date().getTime()}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        
+        // 显示成功提示
+        alert(this.t('edgeDetection.saveSuccess'))
+      } catch (error) {
+        console.error('Save image error:', error)
+        alert(this.t('edgeDetection.saveError') + ': ' + error.message)
+      }
+    },
+    saveVideoFrame() {
+      if (!this.$refs.edgeCanvas) {
+        alert(this.t('edgeDetection.saveError'))
+        return
+      }
+      
+      try {
+        const canvas = this.$refs.edgeCanvas
+        // 检查canvas是否有内容
+        if (canvas.width === 0 || canvas.height === 0) {
+          alert(this.t('edgeDetection.saveError') + ': ' + 'No edge detection result available')
+          return
+        }
+        
+        // 将canvas转换为blob并下载
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            alert(this.t('edgeDetection.saveError'))
+            return
+          }
+          
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `edge_detection_video_${this.algorithm}_${new Date().getTime()}.png`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(url)
+          
+          // 显示成功提示
+          alert(this.t('edgeDetection.saveSuccess'))
+        }, 'image/png')
+      } catch (error) {
+        console.error('Save video frame error:', error)
+        alert(this.t('edgeDetection.saveError') + ': ' + error.message)
+      }
     }
+  },
+  beforeUnmount() {
+    // 组件销毁前停止视频处理
+    this.stopVideoProcessing()
   }
 }
 </script>
@@ -597,6 +888,114 @@ export default {
   opacity: 0.8;
 }
 
+.mode-toggle {
+  display: flex;
+  gap: 10px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.mode-btn:hover {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.5);
+}
+
+.mode-btn.active {
+  background: rgba(212, 175, 55, 0.2);
+  border-color: var(--text-color);
+  font-weight: 600;
+}
+
+.video-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.video-box {
+  background: var(--container-color);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+  padding: 20px;
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.image-box-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.image-box-header h3 {
+  color: var(--text-color);
+  margin: 0;
+  font-size: 1.2em;
+  transition: color 0.3s ease;
+}
+
+.video-box h3 {
+  color: var(--text-color);
+  margin-bottom: 15px;
+  font-size: 1.2em;
+  transition: color 0.3s ease;
+}
+
+.save-btn {
+  padding: 8px 16px;
+  background: rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.save-btn:hover {
+  background: rgba(212, 175, 55, 0.3);
+  border-color: var(--text-color);
+  transform: translateY(-1px);
+}
+
+.save-btn:active {
+  transform: translateY(0);
+}
+
+.video-container {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.edge-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
 @media (max-width: 768px) {
   .metrics-grid {
     grid-template-columns: 1fr;
@@ -604,6 +1003,10 @@ export default {
   
   .images-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  
+  .video-section {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -19,8 +19,17 @@ export const i18n = {
       blur: '模糊核大小：',
       cannyThreshold: 'Canny 阈值：',
       selectImage: '📁 选择图片',
+      selectVideo: '📹 选择视频',
       startDetection: '✨ 开始边缘检测',
       processing: '处理中...',
+      saveImage: '💾 保存边缘检测结果',
+      saveSuccess: '保存成功',
+      saveError: '保存失败',
+      videoMode: '视频模式',
+      imageMode: '图片模式',
+      videoPlaying: '视频播放中',
+      videoPaused: '视频已暂停',
+      selectVideoPlaceholder: '请选择一个视频文件',
       originalImage: '原始图片',
       edgeResult: '边缘检测结果',
       selectImagePlaceholder: '请选择一张图片',
@@ -122,8 +131,17 @@ export const i18n = {
       blur: 'Blur Kernel Size:',
       cannyThreshold: 'Canny Threshold:',
       selectImage: '📁 Select Image',
+      selectVideo: '📹 Select Video',
       startDetection: '✨ Start Edge Detection',
       processing: 'Processing...',
+      saveImage: '💾 Save Edge Detection Result',
+      saveSuccess: 'Save successful',
+      saveError: 'Save failed',
+      videoMode: 'Video Mode',
+      imageMode: 'Image Mode',
+      videoPlaying: 'Video Playing',
+      videoPaused: 'Video Paused',
+      selectVideoPlaceholder: 'Please select a video file',
       originalImage: 'Original Image',
       edgeResult: 'Edge Detection Result',
       selectImagePlaceholder: 'Please select an image',
@@ -234,4 +252,8 @@ export function t(key, lang = null) {
   
   return value || key
 }
+
+
+
+
 
