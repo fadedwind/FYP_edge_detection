@@ -123,11 +123,12 @@ export const i18n = {
     },
     // 文档页面
     documentation: {
-      title: '文档目录',
+      title: '算法原理文档',
+      subtitle: '点击下方链接查看详细的算法原理说明',
       edgeDetectionDocs: '边缘检测算法详解',
+      edgeDetectionDesc: '详细介绍 Sobel、Canny、Prewitt 等经典边缘检测算法的原理和实现',
       metricsDocs: '评估指标与 ODS/OIS',
-      loading: '加载中...',
-      loadError: '加载文档失败'
+      metricsDesc: '介绍边缘检测的评估指标，包括 Precision、Recall、F1-Score 以及 ODS/OIS 的计算方法'
     },
     // 外观设置
     appearanceSettings: {
@@ -282,11 +283,12 @@ export const i18n = {
     },
     // Documentation Page
     documentation: {
-      title: 'Documentation',
+      title: 'Algorithm Documentation',
+      subtitle: 'Click the links below to view detailed algorithm explanations',
       edgeDetectionDocs: 'Edge Detection Algorithm Details',
+      edgeDetectionDesc: 'Detailed introduction to classical edge detection algorithms including Sobel, Canny, Prewitt and their implementations',
       metricsDocs: 'Evaluation Metrics & ODS/OIS',
-      loading: 'Loading...',
-      loadError: 'Failed to load document'
+      metricsDesc: 'Introduction to edge detection evaluation metrics including Precision, Recall, F1-Score, and ODS/OIS calculation methods'
     },
     // Appearance Settings
     appearanceSettings: {

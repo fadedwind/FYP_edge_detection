@@ -38,16 +38,6 @@
         <span v-if="!isCollapsed" class="label">{{ t('sidebar.vehicleDetection') }}</span>
       </button>
       
-      <button 
-        class="nav-item" 
-        :class="{ active: $route.path === '/docs' }"
-        @click="navigate('/docs')"
-        :title="isCollapsed ? t('sidebar.documentation') : ''"
-      >
-        <span class="icon">📚</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.documentation') }}</span>
-      </button>
-      
       <div class="divider" v-if="!isCollapsed"></div>
       
       <button 
@@ -69,6 +59,16 @@
       </button>
       
       <div class="divider" v-if="!isCollapsed"></div>
+      
+      <button 
+        class="nav-item" 
+        :class="{ active: $route.path === '/docs' }"
+        @click="navigate('/docs')"
+        :title="isCollapsed ? t('sidebar.documentation') : ''"
+      >
+        <span class="icon">📚</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.documentation') }}</span>
+      </button>
       
       <button 
         class="nav-item" 

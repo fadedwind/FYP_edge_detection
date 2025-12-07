@@ -374,7 +374,7 @@ export default {
   data() {
     return {
       algorithm: 'Canny',
-      algoOptions: ['Sobel', 'color-sobel', 'Canny', 'color-canny', 'Prewitt'],
+      algoOptions: ['Prewitt', 'Sobel', 'color-sobel', 'Canny', 'color-canny'],
       blur: 7,
       cannyLow: 100,
       cannyHigh: 220,
