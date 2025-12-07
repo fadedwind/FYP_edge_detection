@@ -2,7 +2,7 @@
   <div class="page-container">
     <header class="header">
       <h1>🖼️ {{ t('edgeDetection.title') }}</h1>
-      <p class="subtitle">{{ t('edgeDetection.subtitle') }}</p>
+      <p class="subtitle">{{ t('edgeDetection.subtitleClassical') }}</p>
     </header>
 
     <main class="main-content">
@@ -298,13 +298,23 @@
             <span v-if="batchFiles.length > 0" class="file-count">{{ t('edgeDetection.selectedCount').replace('{count}', batchFiles.length) }}</span>
           </div>
 
-          <button
-            @click="startBatchProcess"
-            :disabled="batchFiles.length === 0 || batchProcessing"
-            class="detect-btn"
-          >
-            {{ batchProcessing ? t('edgeDetection.batchProcessingStatus') : t('edgeDetection.startBatch') }}
-          </button>
+          <div class="batch-buttons">
+            <button
+              @click="startBatchProcess"
+              :disabled="batchFiles.length === 0 || batchProcessing || bsds500Processing"
+              class="detect-btn"
+            >
+              {{ batchProcessing ? t('edgeDetection.batchProcessingStatus') : t('edgeDetection.startBatch') }}
+            </button>
+            
+            <button
+              @click="startBSDS500QuickTest"
+              :disabled="batchProcessing || bsds500Processing"
+              class="detect-btn bsds500-btn"
+            >
+              {{ bsds500Processing ? t('edgeDetection.quickTestProcessing') : t('edgeDetection.quickTestBSDS500') }}
+            </button>
+          </div>
 
           <!-- 批量处理结果 -->
           <div v-if="batchResults" class="batch-results">
@@ -364,7 +374,7 @@ export default {
   data() {
     return {
       algorithm: 'Canny',
-      algoOptions: ['Sobel', '彩色Sobel', 'Canny', '彩色Canny', 'Prewitt', 'HED'],
+      algoOptions: ['Sobel', 'color-sobel', 'Canny', 'color-canny', 'Prewitt'],
       blur: 7,
       cannyLow: 100,
       cannyHigh: 220,
@@ -382,6 +392,7 @@ export default {
       batchFiles: [],
       batchProcessing: false,
       batchResults: null,
+      bsds500Processing: false,
       videoProcessing: false,
       videoFrameInterval: null,
       lastProcessedFrame: 0,
@@ -648,6 +659,33 @@ export default {
         f1: result.best_f1 || result.f1 || 0
       }
     },
+    async startBSDS500QuickTest() {
+      this.bsds500Processing = true
+      this.batchResults = null
+      
+      try {
+        // 调用BSDS500快速测试API
+        const response = await axios.post('/api/bsds500-quick-test', {
+          algorithm: this.algorithm,
+          blur: this.blur,
+          sobel_ksize: this.sobelKsize,
+          canny_low: this.cannyLow,
+          canny_high: this.cannyHigh,
+          subset: 'val' // 默认使用验证集
+        })
+        
+        if (response.data.success) {
+          this.batchResults = response.data
+        } else {
+          alert('BSDS500快速测试失败：' + (response.data.error || '未知错误'))
+        }
+      } catch (error) {
+        console.error('BSDS500快速测试错误:', error)
+        alert('BSDS500快速测试失败：' + (error.response?.data?.error || error.message))
+      } finally {
+        this.bsds500Processing = false
+      }
+    },
     saveEdgeImage() {
       if (!this.edgeImage) {
         alert(this.t('edgeDetection.saveError'))
@@ -782,6 +820,22 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+.batch-buttons {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.bsds500-btn {
+  background: rgba(212, 175, 55, 0.3);
+  border-color: rgba(212, 175, 55, 0.7);
+}
+
+.bsds500-btn:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.4);
+  border-color: var(--text-color);
 }
 
 .file-count {

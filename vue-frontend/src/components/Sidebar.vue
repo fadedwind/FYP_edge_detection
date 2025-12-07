@@ -12,10 +12,20 @@
         class="nav-item" 
         :class="{ active: $route.path === '/' }"
         @click="navigate('/')"
-        :title="isCollapsed ? t('sidebar.edgeDetection') : ''"
+        :title="isCollapsed ? t('sidebar.classicalEdgeDetection') : ''"
       >
         <span class="icon">🖼️</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.edgeDetection') }}</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.classicalEdgeDetection') }}</span>
+      </button>
+      
+      <button 
+        class="nav-item" 
+        :class="{ active: $route.path === '/deep-learning' }"
+        @click="navigate('/deep-learning')"
+        :title="isCollapsed ? t('sidebar.deepLearningEdgeDetection') : ''"
+      >
+        <span class="icon">🧠</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.deepLearningEdgeDetection') }}</span>
       </button>
       
       <button 
@@ -57,6 +67,29 @@
         <span class="icon">{{ getCurrentLang() === 'zh' ? '🇨🇳' : '🇺🇸' }}</span>
         <span v-if="!isCollapsed" class="label">{{ getCurrentLang() === 'zh' ? 'English' : '中文' }}</span>
       </button>
+      
+      <div class="divider" v-if="!isCollapsed"></div>
+      
+      <button 
+        class="nav-item" 
+        :class="{ active: $route.path === '/changelog' }"
+        @click="navigate('/changelog')"
+        :title="isCollapsed ? t('sidebar.changelog') : ''"
+      >
+        <span class="icon">📝</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.changelog') }}</span>
+      </button>
+      
+      <a
+        href="https://github.com/fadedwind/FYP_edge_detection"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="nav-item github-btn"
+        :title="isCollapsed ? t('sidebar.github') : ''"
+      >
+        <span class="icon">🐙</span>
+        <span v-if="!isCollapsed" class="label">{{ t('sidebar.github') }}</span>
+      </a>
     </nav>
   </div>
 </template>
@@ -259,6 +292,19 @@ export default {
 
 .language-btn {
   margin-top: 8px;
+}
+
+.github-btn {
+  text-decoration: none;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.github-btn:hover {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.3);
 }
 
 @media (max-width: 768px) {

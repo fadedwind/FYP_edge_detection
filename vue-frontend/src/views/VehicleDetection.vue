@@ -111,7 +111,7 @@ export default {
   inject: ['currentLanguage'],
   data() {
     return {
-      selectedAlgorithm: '彩色Canny边缘检测',
+      selectedAlgorithm: 'color-canny',
       minRectangularity: 0.2,
       selectedImage: null,
       markedImage: null,
@@ -151,9 +151,9 @@ export default {
         console.error('加载算法列表失败:', error)
         this.algorithms = [
           'Canny边缘检测',
-          '彩色Canny边缘检测',
+          'color-canny',
           'Sobel边缘检测',
-          '彩色Sobel边缘检测'
+          'color-sobel'
         ]
       }
     },

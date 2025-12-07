@@ -4,15 +4,18 @@ export const i18n = {
     // 侧边栏
     sidebar: {
       title: '导航',
-      edgeDetection: '边缘检测',
+      classicalEdgeDetection: '经典算法边缘检测',
+      deepLearningEdgeDetection: '深度学习边缘检测',
       vehicleDetection: '汽车识别',
       documentation: '算法原理',
-      appearanceSettings: '外观设置'
+      appearanceSettings: '外观设置',
+      changelog: '开发日志',
+      github: 'GitHub 仓库'
     },
     // 边缘检测页面
     edgeDetection: {
-      title: '图像边缘检测主页',
-      subtitle: '支持 Sobel / Canny / Prewitt / HED 等多种边缘检测算法',
+      title: '经典算法边缘检测',
+      subtitleClassical: '支持 Sobel / Canny / Prewitt 等经典边缘检测算法',
       algorithm: '边缘检测算法：',
       moreParams: '更多参数调整',
       collapseParams: '收起更多参数',
@@ -52,6 +55,8 @@ export const i18n = {
       selectedCount: '已选择 {count} 张图片',
       startBatch: '🚀 开始批量处理',
       batchProcessingStatus: '处理中...',
+      quickTestBSDS500: '⚡ 快速测试:BSDS500',
+      quickTestProcessing: 'BSDS500测试处理中...',
       batchResults: '批量处理结果',
       ods: 'ODS (Optimal Dataset Scale)',
       ois: 'OIS (Optimal Image Scale)',
@@ -59,6 +64,33 @@ export const i18n = {
       prCurve: 'PR 曲线',
       processedResults: '处理结果（共 {count} 张）',
       // 指标标签（保持英文）
+      precision: 'Precision',
+      recall: 'Recall',
+      f1Score: 'F1-Score'
+    },
+    // 深度学习边缘检测页面
+    deepLearningEdgeDetection: {
+      title: '深度学习边缘检测',
+      subtitle: '支持 HED 等基于深度学习的边缘检测算法',
+      algorithm: '边缘检测算法：',
+      selectImage: '📁 选择图片',
+      selectVideo: '📹 选择视频',
+      startDetection: '✨ 开始边缘检测',
+      processing: '处理中...',
+      saveImage: '💾 保存边缘检测结果',
+      saveSuccess: '保存成功',
+      saveError: '保存失败',
+      videoMode: '视频模式',
+      imageMode: '图片模式',
+      videoPlaying: '视频播放中',
+      videoPaused: '视频已暂停',
+      selectVideoPlaceholder: '请选择一个视频文件',
+      originalImage: '原始图片',
+      edgeResult: '边缘检测结果',
+      selectImagePlaceholder: '请选择一张图片',
+      edgeResultPlaceholder: '边缘结果将显示在这里',
+      metrics: '评估指标',
+      edgePixels: '非零边缘像素数：',
       precision: 'Precision',
       recall: 'Recall',
       f1Score: 'F1-Score'
@@ -105,6 +137,21 @@ export const i18n = {
       textColor: '文字颜色：',
       resetDefault: '恢复默认（黑金）'
     },
+    // 开发日志
+    changelog: {
+      title: '开发日志',
+      subtitle: 'Git 提交记录',
+      refresh: '🔄 刷新',
+      loading: '加载中',
+      searchPlaceholder: '搜索提交记录...',
+      loadError: '加载失败',
+      noCommits: '暂无提交记录',
+      changedFiles: '修改的文件',
+      justNow: '刚刚',
+      minutesAgo: '分钟前',
+      hoursAgo: '小时前',
+      daysAgo: '天前'
+    },
     // 通用
     common: {
       close: '×',
@@ -116,15 +163,18 @@ export const i18n = {
     // Sidebar
     sidebar: {
       title: 'Navigation',
-      edgeDetection: 'Edge Detection',
+      classicalEdgeDetection: 'Classical Edge Detection',
+      deepLearningEdgeDetection: 'Deep Learning Edge Detection',
       vehicleDetection: 'Vehicle Detection',
       documentation: 'Documentation',
-      appearanceSettings: 'Appearance Settings'
+      appearanceSettings: 'Appearance Settings',
+      changelog: 'Changelog',
+      github: 'GitHub Repository'
     },
     // Edge Detection Page
     edgeDetection: {
-      title: 'Image Edge Detection',
-      subtitle: 'Support Sobel / Canny / Prewitt / HED and other edge detection algorithms',
+      title: 'Classical Edge Detection',
+      subtitleClassical: 'Support Sobel / Canny / Prewitt and other classical edge detection algorithms',
       algorithm: 'Edge Detection Algorithm:',
       moreParams: 'More Parameters',
       collapseParams: 'Collapse Parameters',
@@ -164,6 +214,8 @@ export const i18n = {
       selectedCount: '{count} images selected',
       startBatch: '🚀 Start Batch Processing',
       batchProcessingStatus: 'Processing...',
+      quickTestBSDS500: '⚡ Quick Test:BSDS500',
+      quickTestProcessing: 'BSDS500 test processing...',
       batchResults: 'Batch Processing Results',
       ods: 'ODS (Optimal Dataset Scale)',
       ois: 'OIS (Optimal Image Scale)',
@@ -171,6 +223,33 @@ export const i18n = {
       prCurve: 'PR Curve',
       processedResults: 'Processed Results ({count} images)',
       // Metrics labels (keep English)
+      precision: 'Precision',
+      recall: 'Recall',
+      f1Score: 'F1-Score'
+    },
+    // Deep Learning Edge Detection Page
+    deepLearningEdgeDetection: {
+      title: 'Deep Learning Edge Detection',
+      subtitle: 'Support HED and other deep learning-based edge detection algorithms',
+      algorithm: 'Edge Detection Algorithm:',
+      selectImage: '📁 Select Image',
+      selectVideo: '📹 Select Video',
+      startDetection: '✨ Start Edge Detection',
+      processing: 'Processing...',
+      saveImage: '💾 Save Edge Detection Result',
+      saveSuccess: 'Save successful',
+      saveError: 'Save failed',
+      videoMode: 'Video Mode',
+      imageMode: 'Image Mode',
+      videoPlaying: 'Video Playing',
+      videoPaused: 'Video Paused',
+      selectVideoPlaceholder: 'Please select a video file',
+      originalImage: 'Original Image',
+      edgeResult: 'Edge Detection Result',
+      selectImagePlaceholder: 'Please select an image',
+      edgeResultPlaceholder: 'Edge result will be displayed here',
+      metrics: 'Evaluation Metrics',
+      edgePixels: 'Non-zero Edge Pixels:',
       precision: 'Precision',
       recall: 'Recall',
       f1Score: 'F1-Score'
@@ -216,6 +295,21 @@ export const i18n = {
       containerColor: 'Container Color:',
       textColor: 'Text Color:',
       resetDefault: 'Reset to Default (Black & Gold)'
+    },
+    // Changelog
+    changelog: {
+      title: 'Changelog',
+      subtitle: 'Git Commit History',
+      refresh: '🔄 Refresh',
+      loading: 'Loading',
+      searchPlaceholder: 'Search commits...',
+      loadError: 'Failed to load',
+      noCommits: 'No commits found',
+      changedFiles: 'Changed files',
+      justNow: 'Just now',
+      minutesAgo: ' minutes ago',
+      hoursAgo: ' hours ago',
+      daysAgo: ' days ago'
     },
     // Common
     common: {

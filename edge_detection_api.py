@@ -81,9 +81,9 @@ def color_sobel_edge_detection(rgb_img):
 
 EDGE_ALGORITHMS = {
     "Canny边缘检测": canny_edge_detection,
-    "彩色Canny边缘检测": color_canny_edge_detection,
+    "color-canny": color_canny_edge_detection,
     "Sobel边缘检测": sobel_edge_detection,
-    "彩色Sobel边缘检测": color_sobel_edge_detection
+    "color-sobel": color_sobel_edge_detection
 }
 
 # ------------------------------------------------------------------------------
@@ -190,7 +190,7 @@ def detect_vehicle():
             return jsonify({"error": f"不支持的算法: {algorithm}"}), 400
         
         algo_func = EDGE_ALGORITHMS[algorithm]
-        if "彩色" in algorithm:
+        if "color" in algorithm.lower() or "彩色" in algorithm:
             edge_img = algo_func(img_bgr)
         else:
             edge_img = algo_func(gray_img)
@@ -273,7 +273,7 @@ def edge_detect():
             gx = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
             gy = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
             edge = cv2.convertScaleAbs(cv2.magnitude(gx, gy))
-        elif algorithm == '彩色Sobel':
+        elif algorithm == 'color-sobel':
             img_blur = cv2.GaussianBlur(img_bgr, (blur, blur), 1)
             sobel_edges = []
             for i in range(3):
@@ -285,7 +285,7 @@ def edge_detect():
         elif algorithm == 'Canny':
             gray_blur = cv2.GaussianBlur(img_gray, (blur, blur), 1)
             edge = cv2.Canny(gray_blur, canny_low, canny_high)
-        elif algorithm == '彩色Canny':
+        elif algorithm == 'color-canny':
             img_blur = cv2.GaussianBlur(img_bgr, (blur, blur), 1)
             canny_edges = [cv2.Canny(img_blur[:, :, i], canny_low, canny_high) for i in range(3)]
             edge = cv2.bitwise_or(canny_edges[0], canny_edges[1])
@@ -297,6 +297,49 @@ def edge_detect():
             gx = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_x)
             gy = cv2.filter2D(gray_blur, cv2.CV_64F, kernel_y)
             edge = cv2.convertScaleAbs(cv2.magnitude(gx, gy))
+        elif algorithm == 'HED':
+            # HED算法：使用深度学习模型
+            try:
+                repo_dir = os.path.dirname(os.path.abspath(__file__))
+            except Exception:
+                repo_dir = os.getcwd()
+            prototxt_path = os.path.join(repo_dir, 'models', 'hed_deploy.prototxt')
+            cand1 = os.path.join(repo_dir, 'models', 'hed_pretrained_bsds.caffemodel')
+            cand2 = os.path.join(repo_dir, 'models', 'hed_bsds.caffemodel')
+            caffemodel_path = cand1 if os.path.exists(cand1) else (cand2 if os.path.exists(cand2) else None)
+
+            if os.path.exists(prototxt_path) and caffemodel_path and os.path.exists(caffemodel_path):
+                try:
+                    net = cv2.dnn.readNetFromCaffe(prototxt_path, caffemodel_path)
+                    blob = cv2.dnn.blobFromImage(img_bgr, scalefactor=1.0, size=(500, 500), 
+                                                mean=(104.00698793, 116.66876762, 122.67891434), 
+                                                swapRB=False, crop=False)
+                    net.setInput(blob)
+                    out = net.forward()
+                    out_map = out[0, 0, :, :]
+                    out_map = (out_map * 255.0).clip(0, 255).astype('uint8')
+                    edge = cv2.resize(out_map, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_LINEAR)
+                except Exception as e:
+                    print(f'HED (Caffe/OpenCV) 推理失败：{e}')
+                    # 回退到PyTorch实现
+                    try:
+                        from hed import run_hed
+                        hed_map = run_hed(img_bgr, model=None, device='cpu')
+                        edge = cv2.resize(hed_map, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_LINEAR)
+                        edge = edge.astype(np.uint8)
+                    except Exception as e2:
+                        print(f'HED (PyTorch) 不可用或失败：{e2}')
+                        edge = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
+            else:
+                # 尝试PyTorch实现
+                try:
+                    from hed import run_hed
+                    hed_map = run_hed(img_bgr, model=None, device='cpu')
+                    edge = cv2.resize(hed_map, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_LINEAR)
+                    edge = edge.astype(np.uint8)
+                except Exception as e:
+                    print(f'HED (PyTorch) 不可用或失败：{e}')
+                    edge = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
         else:
             # 兜底使用Canny
             gray_blur = cv2.GaussianBlur(img_gray, (blur, blur), 1)
@@ -348,6 +391,92 @@ def get_reference_edge(img):
     reference_edge = cv2.Canny(gray, 150, 255)
     return reference_edge
 
+def generate_output_dir_name(algorithm, blur, sobel_ksize=None, canny_low=None, canny_high=None, prefix=""):
+    """根据算法和参数生成输出文件夹名称
+    
+    注意：
+    - Canny算法不使用sobel_ksize参数
+    - Sobel算法不使用canny_low和canny_high参数
+    """
+    # 清理算法名称（移除特殊字符，用于文件夹名）
+    algo_clean = algorithm.replace(' ', '_').replace('/', '_').replace('彩色', 'color')
+    
+    # 构建参数部分
+    params = []
+    params.append(f"blur{blur}")
+    
+    # 根据算法类型添加相关参数
+    # Canny算法（包括color-canny）：只使用canny参数，不使用sobel_ksize
+    if "canny" in algorithm.lower():
+        if canny_low is not None and canny_high is not None:
+            params.append(f"canny{canny_low}_{canny_high}")
+    # Sobel算法（包括color-sobel）：只使用sobel_ksize参数，不使用canny参数
+    elif "sobel" in algorithm.lower():
+        if sobel_ksize is not None:
+            params.append(f"sobelK{sobel_ksize}")
+    # Prewitt和HED等其他算法：只使用blur参数
+    # （HED暂时不处理，按用户要求）
+    
+    # 组合文件夹名
+    param_str = "_".join(params)
+    if prefix:
+        dir_name = f"{prefix}_{algo_clean}_{param_str}"
+    else:
+        dir_name = f"{algo_clean}_{param_str}"
+    
+    return dir_name
+
+def load_bsds_ground_truth(image_name, H, W):
+    """加载BSDS500数据集的ground truth标注"""
+    try:
+        import scipy.io as sio
+        bsds_root = os.path.join('BSR_bsds500', 'BSDS500', 'data')
+        if not os.path.exists(bsds_root):
+            return None
+        
+        # 尝试在train/val/test三个子集中查找
+        base_name = os.path.splitext(image_name)[0]
+        for sub in ['train', 'val', 'test']:
+            gt_path = os.path.join(bsds_root, 'groundTruth', sub, f'{base_name}.mat')
+            if os.path.exists(gt_path):
+                try:
+                    mat = sio.loadmat(gt_path)
+                    gt = mat.get('groundTruth', None)
+                    if gt is None or gt.size == 0:
+                        continue
+                    
+                    # 合并所有标注的边界（并集）
+                    union = np.zeros((H, W), dtype=np.float32)
+                    for i in range(gt.size):
+                        entry = gt[0, i]
+                        try:
+                            bmap = entry['Boundaries'][0, 0]
+                        except Exception:
+                            bmap = entry[0, 0]['Boundaries'][0, 0]
+                        
+                        if bmap.dtype != np.float32:
+                            bmap = bmap.astype(np.float32)
+                        
+                        # 缩放到目标尺寸
+                        if bmap.shape[0] != H or bmap.shape[1] != W:
+                            bmap = cv2.resize(bmap, (W, H), interpolation=cv2.INTER_NEAREST)
+                        
+                        union = np.maximum(union, bmap)
+                    
+                    # 转换为0/255的uint8格式
+                    ref = (union > 0.5).astype(np.uint8) * 255
+                    return ref
+                except Exception as e:
+                    print(f'加载BSDS GT失败 {gt_path}: {e}')
+                    continue
+        return None
+    except ImportError:
+        print('scipy未安装，无法加载BSDS ground truth')
+        return None
+    except Exception as e:
+        print(f'加载BSDS ground truth异常: {e}')
+        return None
+
 def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100, canny_high=220):
     """生成单通道的边强度图（0-255 uint8），供阈值化用于 ODS/OIS 计算"""
     img_resized = cv2.resize(img, (FRAME_WIDTH, FRAME_HEIGHT))
@@ -359,7 +488,7 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
         grad_x = cv2.Sobel(gray_blur, cv2.CV_64F, 1, 0, ksize=sobel_ksize)
         grad_y = cv2.Sobel(gray_blur, cv2.CV_64F, 0, 1, ksize=sobel_ksize)
         edge = cv2.convertScaleAbs(cv2.magnitude(grad_x, grad_y))
-    elif algorithm == "彩色Sobel":
+    elif algorithm == "color-sobel":
         img_blur = cv2.GaussianBlur(img_resized, (blur_ksize, blur_ksize), 1)
         sobel_edges = []
         for i in range(3):
@@ -450,7 +579,7 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
         # 将NMS后的结果转换为uint8，作为强度图
         # 这样既保持了Canny的NMS特性（真正的Canny算法步骤），又能用于阈值扫描生成PR曲线
         edge = cv2.convertScaleAbs(suppressed)
-    elif algorithm == "彩色Canny":
+    elif algorithm == "color-canny":
         # 对于批量处理，使用真正的Canny算法（每个通道应用NMS）
         img_blur = cv2.GaussianBlur(img_resized, (blur_ksize, blur_ksize), 1)
         canny_edges = []
@@ -573,9 +702,15 @@ def batch_process():
         if sobel_ksize % 2 == 0 or sobel_ksize < 1:
             sobel_ksize = 3
         
-        # 准备输出目录
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        run_output_dir = os.path.join(OUTPUT_FOLDER, timestamp)
+        # 准备输出目录（使用算法名称+参数）
+        dir_name = generate_output_dir_name(algorithm, blur, sobel_ksize, canny_low, canny_high)
+        run_output_dir = os.path.join(OUTPUT_FOLDER, dir_name)
+        # 如果目录已存在，添加序号
+        counter = 1
+        original_dir = run_output_dir
+        while os.path.exists(run_output_dir):
+            run_output_dir = f"{original_dir}_{counter}"
+            counter += 1
         os.makedirs(run_output_dir, exist_ok=True)
         
         # 阈值列表
@@ -808,6 +943,492 @@ def batch_process():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/bsds500-quick-test', methods=['POST'])
+def bsds500_quick_test():
+    """BSDS500快速测试：自动从BSDS500数据集读取图片并使用ground truth进行评估"""
+    try:
+        data = request.get_json()
+        algorithm = data.get('algorithm', 'Canny')
+        blur = int(data.get('blur', 7))
+        sobel_ksize = int(data.get('sobel_ksize', 3))
+        canny_low = int(data.get('canny_low', 100))
+        canny_high = int(data.get('canny_high', 220))
+        subset = data.get('subset', 'val')  # 'train', 'val', 'test'
+        
+        # 参数规范化
+        if blur % 2 == 0:
+            blur += 1
+        if blur < 1:
+            blur = 1
+        if sobel_ksize % 2 == 0 or sobel_ksize < 1:
+            sobel_ksize = 3
+        
+        # BSDS500数据集路径
+        bsds_root = os.path.join('BSR_bsds500', 'BSDS500', 'data')
+        images_dir = os.path.join(bsds_root, 'images', subset)
+        
+        if not os.path.exists(images_dir):
+            return jsonify({"error": f"BSDS500数据集路径不存在: {images_dir}"}), 400
+        
+        # 获取所有图片文件
+        import glob
+        image_files = []
+        for ext in ['*.jpg', '*.jpeg', '*.png']:
+            image_files.extend(glob.glob(os.path.join(images_dir, ext)))
+        
+        if len(image_files) == 0:
+            return jsonify({"error": f"在{images_dir}中未找到图片文件"}), 400
+        
+        # 准备输出目录（使用算法名称+参数）
+        dir_name = generate_output_dir_name(algorithm, blur, sobel_ksize, canny_low, canny_high, prefix=f"BSDS500_{subset}")
+        run_output_dir = os.path.join(OUTPUT_FOLDER, dir_name)
+        # 如果目录已存在，添加序号
+        counter = 1
+        original_dir = run_output_dir
+        while os.path.exists(run_output_dir):
+            run_output_dir = f"{original_dir}_{counter}"
+            counter += 1
+        os.makedirs(run_output_dir, exist_ok=True)
+        
+        # 阈值列表
+        thresholds = list(range(0, 256, 1))
+        thr_TP_sum = np.zeros(len(thresholds), dtype=np.float64)
+        thr_FP_sum = np.zeros(len(thresholds), dtype=np.float64)
+        thr_FN_sum = np.zeros(len(thresholds), dtype=np.float64)
+        
+        per_image_best = []
+        processed_images = []
+        
+        # 处理每张图片
+        for idx, img_path in enumerate(image_files):
+            try:
+                img_bgr = cv2.imread(img_path)
+                if img_bgr is None:
+                    continue
+                
+                img_resized = cv2.resize(img_bgr, (FRAME_WIDTH, FRAME_HEIGHT))
+                img_name = os.path.basename(img_path)
+                
+                # 加载BSDS500 ground truth
+                reference = load_bsds_ground_truth(img_name, FRAME_HEIGHT, FRAME_WIDTH)
+                if reference is None:
+                    # 如果无法加载ground truth，使用Canny伪参考
+                    reference = get_reference_edge(img_resized)
+                
+                edge_strength = compute_edge_strength(img_bgr, algorithm, blur, sobel_ksize, canny_low, canny_high)
+                
+                best_f1 = -1.0
+                best_prec = best_rec = best_thr = 0
+                
+                # 对每个阈值计算 TP/FP/FN
+                for i, t in enumerate(thresholds):
+                    _, detected = cv2.threshold(edge_strength, t, 255, cv2.THRESH_BINARY)
+                    det_mask = (detected > 0)
+                    ref_mask = (reference > 0)
+                    TP = int(np.logical_and(det_mask, ref_mask).sum())
+                    FP = int(np.logical_and(det_mask, np.logical_not(ref_mask)).sum())
+                    FN = int(np.logical_and(np.logical_not(det_mask), ref_mask).sum())
+                    
+                    thr_TP_sum[i] += TP
+                    thr_FP_sum[i] += FP
+                    thr_FN_sum[i] += FN
+                    
+                    # 计算单图指标
+                    prec = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+                    rec = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+                    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+                    if f1 > best_f1:
+                        best_f1 = f1
+                        best_prec = prec
+                        best_rec = rec
+                        best_thr = t
+                
+                per_image_best.append({
+                    "index": idx,
+                    "best_threshold": int(best_thr),
+                    "best_precision": round(best_prec, 3),
+                    "best_recall": round(best_rec, 3),
+                    "best_f1": round(best_f1, 3)
+                })
+                
+                # 保存最佳阈值下的边缘图
+                _, detected_final = cv2.threshold(edge_strength, best_thr, 255, cv2.THRESH_BINARY)
+                edge_save_name = f"{os.path.splitext(img_name)[0]}_edge.png"
+                edge_save_path = os.path.join(run_output_dir, edge_save_name)
+                cv2.imwrite(edge_save_path, detected_final)
+                
+                processed_images.append({
+                    "index": idx,
+                    "edge_image": image_to_base64(detected_final),
+                    "filename": edge_save_name
+                })
+            except Exception as e:
+                print(f'处理图片 {img_path} 失败：', e)
+                continue
+        
+        if len(per_image_best) == 0:
+            return jsonify({"error": "未成功处理任何图片"}), 400
+        
+        # 计算 ODS（数据集级）
+        denom_prec = thr_TP_sum + thr_FP_sum
+        precision_mean = np.zeros_like(thr_TP_sum)
+        nonzero = denom_prec > 0
+        precision_mean[nonzero] = thr_TP_sum[nonzero] / denom_prec[nonzero]
+        
+        denom_rec = thr_TP_sum + thr_FN_sum
+        recall_mean = np.zeros_like(thr_TP_sum)
+        nonzero_r = denom_rec > 0
+        recall_mean[nonzero_r] = thr_TP_sum[nonzero_r] / denom_rec[nonzero_r]
+        
+        mean_f1_per_thr = np.zeros_like(precision_mean)
+        nonzero_f = (precision_mean + recall_mean) > 0
+        mean_f1_per_thr[nonzero_f] = 2 * precision_mean[nonzero_f] * recall_mean[nonzero_f] / (
+            precision_mean[nonzero_f] + recall_mean[nonzero_f]
+        )
+        
+        best_idx = int(np.argmax(mean_f1_per_thr))
+        ods_thr = int(thresholds[best_idx])
+        ods_prec = float(precision_mean[best_idx])
+        ods_rec = float(recall_mean[best_idx])
+        ods_f1 = float(mean_f1_per_thr[best_idx])
+        
+        # 计算 OIS
+        ois_prec = np.mean([x["best_precision"] for x in per_image_best])
+        ois_rec = np.mean([x["best_recall"] for x in per_image_best])
+        ois_f1 = np.mean([x["best_f1"] for x in per_image_best])
+        
+        # 生成 PR 曲线（与batch_process相同的逻辑）
+        precision_mean = np.clip(precision_mean, 0.0, 1.0)
+        recall_mean = np.clip(recall_mean, 0.0, 1.0)
+        
+        idxs = np.argsort(recall_mean)
+        recall_sorted = recall_mean[idxs]
+        precision_sorted = precision_mean[idxs]
+        
+        # 去重并取最大值
+        unique_recalls = []
+        max_precisions = []
+        for r, p in zip(recall_sorted, precision_sorted):
+            if len(unique_recalls) == 0 or r != unique_recalls[-1]:
+                unique_recalls.append(r)
+                max_precisions.append(p)
+            else:
+                if p > max_precisions[-1]:
+                    max_precisions[-1] = p
+        
+        recall_sorted = np.array(unique_recalls)
+        precision_sorted = np.array(max_precisions)
+        
+        # 过滤掉recall很小且precision很高的点
+        valid_mask = ~((recall_sorted < 0.05) & (precision_sorted > 0.95))
+        if np.any(valid_mask):
+            recall_sorted = recall_sorted[valid_mask]
+            precision_sorted = precision_sorted[valid_mask]
+        
+        # 确保PR曲线以(1, precision_at_recall_1)结束
+        if len(recall_sorted) > 0 and recall_sorted[-1] < 1.0 - 1e-6:
+            recall_sorted = np.concatenate([recall_sorted, [1.0]])
+            precision_sorted = np.concatenate([precision_sorted, [precision_sorted[-1]]])
+        
+        # 插值生成平滑曲线
+        if len(recall_sorted) == 0 or recall_sorted.max() - recall_sorted.min() < 1e-6:
+            recall_fine = recall_sorted
+            precision_fine = precision_sorted
+        else:
+            recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
+            precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
+            for i in range(len(precision_fine) - 2, -1, -1):
+                precision_fine[i] = max(precision_fine[i], precision_fine[i + 1])
+        
+        # 绘制 PR 曲线
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(recall_fine, precision_fine, '-', linewidth=2, label='PR Curve')
+        ax.plot(recall_sorted, precision_sorted, 'o', markersize=3, alpha=0.6)
+        
+        # 绘制F1-score等值线
+        f1_values = [0.3, 0.5, 0.7]
+        recall_f1 = np.linspace(0.01, 0.99, 100)
+        for f1 in f1_values:
+            precision_f1 = f1 * recall_f1 / (2 * recall_f1 - f1)
+            valid_f1 = (precision_f1 >= 0) & (precision_f1 <= 1) & (recall_f1 > f1 / 2)
+            if np.any(valid_f1):
+                ax.plot(recall_f1[valid_f1], precision_f1[valid_f1], '--', 
+                       linewidth=1, alpha=0.5, color='gray', label=f'F1={f1}')
+        ax.set_xlabel('Recall')
+        ax.set_ylabel('Precision')
+        ax.set_title(f'PR Curve - BSDS500 {subset} ({algorithm})')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.grid(True, linestyle='--', alpha=0.4)
+        ax.legend()
+        
+        pr_path = os.path.join(run_output_dir, f"PR_curve_BSDS500_{subset}_{algorithm}.png")
+        fig.tight_layout()
+        fig.savefig(pr_path, dpi=100)
+        plt.close(fig)
+        
+        # 读取 PR 曲线图片并转换为 base64
+        with open(pr_path, 'rb') as f:
+            pr_img_data = f.read()
+        pr_base64 = base64.b64encode(pr_img_data).decode()
+        pr_image_base64 = f"data:image/png;base64,{pr_base64}"
+        
+        # 保存 CSV
+        csv_path = os.path.join(run_output_dir, f"batch_metrics_BSDS500_{subset}_{algorithm}.csv")
+        with open(csv_path, 'w', newline='', encoding='utf-8') as cf:
+            writer = csv.writer(cf)
+            writer.writerow(["index", "best_threshold", "best_precision", "best_recall", "best_f1"])
+            for row in per_image_best:
+                writer.writerow([row["index"], row["best_threshold"], row["best_precision"], 
+                               row["best_recall"], row["best_f1"]])
+            writer.writerow([])
+            writer.writerow(["ODS_threshold", ods_thr])
+            writer.writerow(["ODS_precision", round(ods_prec, 3)])
+            writer.writerow(["ODS_recall", round(ods_rec, 3)])
+            writer.writerow(["ODS_f1", round(ods_f1, 3)])
+            writer.writerow(["OIS_precision", round(ois_prec, 3)])
+            writer.writerow(["OIS_recall", round(ois_rec, 3)])
+            writer.writerow(["OIS_f1", round(ois_f1, 3)])
+        
+        return jsonify({
+            "success": True,
+            "metrics": {
+                "ods": {
+                    "threshold": ods_thr,
+                    "precision": round(ods_prec, 3),
+                    "recall": round(ods_rec, 3),
+                    "f1": round(ods_f1, 3)
+                },
+                "ois": {
+                    "precision": round(ois_prec, 3),
+                    "recall": round(ois_rec, 3),
+                    "f1": round(ois_f1, 3)
+                }
+            },
+            "per_image_results": per_image_best,
+            "pr_curve": pr_image_base64,
+            "output_dir": run_output_dir,
+            "processed_count": len(per_image_best),
+            "processed_images": processed_images,
+            "subset": subset
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/git-log', methods=['GET'])
+def get_git_log():
+    """获取Git提交记录"""
+    try:
+        import subprocess
+        import json
+        
+        # 获取提交数量限制
+        limit = int(request.args.get('limit', 50))
+        
+        # 查找Git仓库根目录
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        current_dir = script_dir
+        git_root = None
+        
+        # 向上查找.git目录
+        max_depth = 10
+        depth = 0
+        while depth < max_depth:
+            potential_git = os.path.join(current_dir, '.git')
+            if os.path.exists(potential_git):
+                git_root = current_dir
+                break
+            parent = os.path.dirname(current_dir)
+            if parent == current_dir:  # 到达根目录
+                break
+            current_dir = parent
+            depth += 1
+        
+        if not git_root:
+            return jsonify({
+                "success": False,
+                "error": f"未找到Git仓库（从 {script_dir} 向上查找了 {depth} 层）"
+            }), 400
+        
+        # 先检查是否有提交记录
+        check_cmd = ['git', 'rev-list', '--count', 'HEAD']
+        check_result = subprocess.run(
+            check_cmd,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            cwd=git_root,
+            timeout=5
+        )
+        
+        if check_result.returncode != 0:
+            return jsonify({
+                "success": False,
+                "error": f"无法检查Git提交记录: {check_result.stderr or '未知错误'}"
+            }), 500
+        
+        commit_count_str = check_result.stdout.strip() if check_result.stdout else '0'
+        try:
+            commit_count = int(commit_count_str)
+        except ValueError:
+            commit_count = 0
+        
+        if commit_count == 0:
+            return jsonify({
+                "success": True,
+                "commits": [],
+                "count": 0,
+                "message": "Git仓库为空，没有提交记录"
+            })
+        
+        # 执行git log命令
+        try:
+            # 使用分隔符来区分不同提交
+            cmd = [
+                'git', 'log',
+                f'--max-count={limit}',
+                '--pretty=format:%H|||%h|||%an|||%ai|||%s|||%b',
+                '--name-only',
+                '--'
+            ]
+            
+            # 使用UTF-8编码，避免Windows GBK编码问题
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',  # 遇到编码错误时替换而不是失败
+                cwd=git_root,
+                timeout=10
+            )
+            
+            if result.returncode != 0:
+                error_msg = result.stderr if result.stderr else '未知错误'
+                return jsonify({
+                    "success": False,
+                    "error": f"Git命令执行失败 (返回码: {result.returncode}): {error_msg}"
+                }), 500
+            
+            # 解析git log输出
+            output = result.stdout
+            if output is None:
+                return jsonify({
+                    "success": False,
+                    "error": f"Git命令未返回任何输出（工作目录: {git_root}，返回码: {result.returncode}，stderr: {result.stderr[:200] if result.stderr else '无'}）"
+                }), 500
+            
+            if not isinstance(output, str):
+                output = str(output) if output else ''
+            
+            if not output.strip():
+                # 如果输出为空，但之前检查有提交记录，可能是格式问题
+                # 尝试使用更简单的命令
+                simple_cmd = ['git', 'log', f'--max-count={min(limit, 5)}', '--oneline']
+                simple_result = subprocess.run(
+                    simple_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    cwd=git_root,
+                    timeout=5
+                )
+                if simple_result.returncode == 0 and simple_result.stdout:
+                    # 有提交但格式命令失败，返回错误
+                    return jsonify({
+                        "success": False,
+                        "error": f"Git log格式命令失败，但检测到有提交记录（工作目录: {git_root}）。请检查Git版本或命令格式。"
+                    }), 500
+                return jsonify({
+                    "success": False,
+                    "error": f"Git命令未返回任何输出（工作目录: {git_root}）"
+                }), 500
+            
+            commits = []
+            try:
+                lines = output.split('\n')
+            except AttributeError:
+                return jsonify({
+                    "success": False,
+                    "error": f"Git输出格式错误: {type(output)}"
+                }), 500
+            i = 0
+            
+            while i < len(lines):
+                line = lines[i]
+                if not line or not isinstance(line, str):
+                    i += 1
+                    continue
+                    
+                line = line.strip()
+                if not line:
+                    i += 1
+                    continue
+                
+                # 解析提交信息（使用|||作为分隔符）
+                if '|||' not in line:
+                    i += 1
+                    continue
+                    
+                parts = line.split('|||')
+                if len(parts) >= 5:
+                    commit = {
+                        'hash': parts[0] if parts[0] else '',
+                        'short_hash': parts[1] if len(parts) > 1 and parts[1] else (parts[0][:7] if parts[0] else ''),
+                        'author': parts[2] if len(parts) > 2 and parts[2] else '',
+                        'date': parts[3] if len(parts) > 3 and parts[3] else '',
+                        'message': parts[4] if len(parts) > 4 and parts[4] else '',
+                        'body': parts[5] if len(parts) > 5 and parts[5] else '',
+                        'files': []
+                    }
+                    
+                    # 读取文件名（直到下一个空行或下一个提交）
+                    i += 1
+                    while i < len(lines):
+                        file_line = lines[i]
+                        if not file_line or not isinstance(file_line, str):
+                            i += 1
+                            continue
+                        file_line = file_line.strip()
+                        if not file_line:
+                            break
+                        # 检查是否是新的提交（包含|||分隔符）
+                        if '|||' in file_line:
+                            break
+                        commit['files'].append(file_line)
+                        i += 1
+                    
+                    commits.append(commit)
+                i += 1
+            
+            return jsonify({
+                "success": True,
+                "commits": commits,
+                "count": len(commits)
+            })
+            
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                "success": False,
+                "error": "Git命令执行超时"
+            }), 500
+        except FileNotFoundError:
+            return jsonify({
+                "success": False,
+                "error": "Git未安装或不在PATH中"
+            }), 500
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": f"获取Git日志失败: {str(e)}"
+            }), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     print("启动车辆识别 API 服务器...")
     print("API 地址: http://localhost:5000")
@@ -817,5 +1438,7 @@ if __name__ == '__main__':
     print("  POST /api/detect      - 车辆识别")
     print("  POST /api/edge-detect - 通用边缘检测（主页）")
     print("  POST /api/batch-process - 批量处理图片（计算 ODS/OIS 和 PR 曲线）")
+    print("  POST /api/bsds500-quick-test - BSDS500快速测试（使用ground truth）")
+    print("  GET  /api/git-log - 获取Git提交记录")
     app.run(host='0.0.0.0', port=5000, debug=True)
 
