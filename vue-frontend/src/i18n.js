@@ -4,23 +4,35 @@ export const i18n = {
     // 侧边栏
     sidebar: {
       title: '导航',
-      edgeDetection: '边缘检测',
+      classicalEdgeDetection: '经典算法边缘检测',
+      deepLearningEdgeDetection: '深度学习边缘检测',
       vehicleDetection: '汽车识别',
       documentation: '算法原理',
-      appearanceSettings: '外观设置'
+      appearanceSettings: '外观设置',
+      changelog: '开发日志',
+      github: 'GitHub 仓库'
     },
     // 边缘检测页面
     edgeDetection: {
-      title: '图像边缘检测主页',
-      subtitle: '支持 Sobel / Canny / Prewitt / HED 等多种边缘检测算法',
+      title: '经典算法边缘检测',
+      subtitleClassical: '支持 Sobel / Canny / Prewitt 等经典边缘检测算法',
       algorithm: '边缘检测算法：',
       moreParams: '更多参数调整',
       collapseParams: '收起更多参数',
       blur: '模糊核大小：',
       cannyThreshold: 'Canny 阈值：',
       selectImage: '📁 选择图片',
+      selectVideo: '📹 选择视频',
       startDetection: '✨ 开始边缘检测',
       processing: '处理中...',
+      saveImage: '💾 保存边缘检测结果',
+      saveSuccess: '保存成功',
+      saveError: '保存失败',
+      videoMode: '视频模式',
+      imageMode: '图片模式',
+      videoPlaying: '视频播放中',
+      videoPaused: '视频已暂停',
+      selectVideoPlaceholder: '请选择一个视频文件',
       originalImage: '原始图片',
       edgeResult: '边缘检测结果',
       selectImagePlaceholder: '请选择一张图片',
@@ -43,6 +55,8 @@ export const i18n = {
       selectedCount: '已选择 {count} 张图片',
       startBatch: '🚀 开始批量处理',
       batchProcessingStatus: '处理中...',
+      quickTestBSDS500: '⚡ 快速测试:BSDS500',
+      quickTestProcessing: 'BSDS500测试处理中...',
       batchResults: '批量处理结果',
       ods: 'ODS (Optimal Dataset Scale)',
       ois: 'OIS (Optimal Image Scale)',
@@ -52,7 +66,72 @@ export const i18n = {
       // 指标标签（保持英文）
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      // 评估参数（BSDS500标准）
+      evaluationParams: '评估参数（BSDS500标准）',
+      useTolerance: '使用边界匹配容差',
+      maxDist: '最大匹配距离（图像对角线比例）',
+      maxDistDesc: 'BSDS500标准：0.0075，NYUD：0.011',
+      useThinning: '边界细化（Thinning）',
+      useThinningDesc: '将边界细化为单像素宽度'
+    },
+    // 深度学习边缘检测页面
+    deepLearningEdgeDetection: {
+      title: '深度学习边缘检测',
+      subtitle: '支持 HED、PiDiNet 等基于深度学习的边缘检测算法',
+      algorithm: '边缘检测算法：',
+      selectImage: '📁 选择图片',
+      selectVideo: '📹 选择视频',
+      startDetection: '✨ 开始边缘检测',
+      processing: '处理中...',
+      saveImage: '💾 保存边缘检测结果',
+      saveSuccess: '保存成功',
+      saveError: '保存失败',
+      videoMode: '视频模式',
+      imageMode: '图片模式',
+      videoPlaying: '视频播放中',
+      videoPaused: '视频已暂停',
+      selectVideoPlaceholder: '请选择一个视频文件',
+      originalImage: '原始图片',
+      edgeResult: '边缘检测结果',
+      selectImagePlaceholder: '请选择一张图片',
+      edgeResultPlaceholder: '边缘结果将显示在这里',
+      metrics: '评估指标',
+      edgePixels: '非零边缘像素数：',
+      precision: 'Precision',
+      recall: 'Recall',
+      f1Score: 'F1-Score',
+      hedDescription: 'HED算法说明',
+      pidinetDescription: 'PiDiNet算法说明',
+      hedModelStatus: 'HED模型状态',
+      pidinetModelStatus: 'PiDiNet模型状态',
+      hedModelLoaded: 'HED模型已加载',
+      hedModelFailed: 'HED模型加载失败',
+      pidinetModelLoaded: 'PiDiNet模型已加载',
+      pidinetModelFailed: 'PiDiNet模型加载失败',
+      // 批量处理
+      batchProcessing: '📁 批量处理',
+      expandBatch: '展开批量处理',
+      collapseBatch: '收起批量处理',
+      selectMultipleImages: '📁 选择多张图片（可多选）',
+      selectedCount: '已选择 {count} 张图片',
+      startBatch: '🚀 开始批量处理',
+      batchProcessingStatus: '处理中...',
+      quickTestBSDS500: '⚡ 快速测试:BSDS500',
+      quickTestProcessing: 'BSDS500测试处理中...',
+      batchResults: '批量处理结果',
+      ods: 'ODS (Optimal Dataset Scale)',
+      ois: 'OIS (Optimal Image Scale)',
+      threshold: '阈值',
+      prCurve: 'PR 曲线',
+      processedResults: '处理结果（共 {count} 张）',
+      // 评估参数（BSDS500标准）
+      evaluationParams: '评估参数（BSDS500标准）',
+      useTolerance: '使用边界匹配容差',
+      maxDist: '最大匹配距离（图像对角线比例）',
+      maxDistDesc: 'BSDS500标准：0.0075，NYUD：0.011',
+      useThinning: '边界细化（Thinning）',
+      useThinningDesc: '将边界细化为单像素宽度'
     },
     // 车辆识别页面
     vehicleDetection: {
@@ -82,11 +161,12 @@ export const i18n = {
     },
     // 文档页面
     documentation: {
-      title: '文档目录',
+      title: '算法原理文档',
+      subtitle: '点击下方链接查看详细的算法原理说明',
       edgeDetectionDocs: '边缘检测算法详解',
+      edgeDetectionDesc: '详细介绍 Sobel、Canny、Prewitt 等经典边缘检测算法的原理和实现',
       metricsDocs: '评估指标与 ODS/OIS',
-      loading: '加载中...',
-      loadError: '加载文档失败'
+      metricsDesc: '介绍边缘检测的评估指标，包括 Precision、Recall、F1-Score 以及 ODS/OIS 的计算方法'
     },
     // 外观设置
     appearanceSettings: {
@@ -95,6 +175,21 @@ export const i18n = {
       containerColor: '容器颜色：',
       textColor: '文字颜色：',
       resetDefault: '恢复默认（黑金）'
+    },
+    // 开发日志
+    changelog: {
+      title: '开发日志',
+      subtitle: 'Git 提交记录',
+      refresh: '🔄 刷新',
+      loading: '加载中',
+      searchPlaceholder: '搜索提交记录...',
+      loadError: '加载失败',
+      noCommits: '暂无提交记录',
+      changedFiles: '修改的文件',
+      justNow: '刚刚',
+      minutesAgo: '分钟前',
+      hoursAgo: '小时前',
+      daysAgo: '天前'
     },
     // 通用
     common: {
@@ -107,23 +202,35 @@ export const i18n = {
     // Sidebar
     sidebar: {
       title: 'Navigation',
-      edgeDetection: 'Edge Detection',
+      classicalEdgeDetection: 'Classical Edge Detection',
+      deepLearningEdgeDetection: 'Deep Learning Edge Detection',
       vehicleDetection: 'Vehicle Detection',
       documentation: 'Documentation',
-      appearanceSettings: 'Appearance Settings'
+      appearanceSettings: 'Appearance Settings',
+      changelog: 'Changelog',
+      github: 'GitHub Repository'
     },
     // Edge Detection Page
     edgeDetection: {
-      title: 'Image Edge Detection',
-      subtitle: 'Support Sobel / Canny / Prewitt / HED and other edge detection algorithms',
+      title: 'Classical Edge Detection',
+      subtitleClassical: 'Support Sobel / Canny / Prewitt and other classical edge detection algorithms',
       algorithm: 'Edge Detection Algorithm:',
       moreParams: 'More Parameters',
       collapseParams: 'Collapse Parameters',
       blur: 'Blur Kernel Size:',
       cannyThreshold: 'Canny Threshold:',
       selectImage: '📁 Select Image',
+      selectVideo: '📹 Select Video',
       startDetection: '✨ Start Edge Detection',
       processing: 'Processing...',
+      saveImage: '💾 Save Edge Detection Result',
+      saveSuccess: 'Save successful',
+      saveError: 'Save failed',
+      videoMode: 'Video Mode',
+      imageMode: 'Image Mode',
+      videoPlaying: 'Video Playing',
+      videoPaused: 'Video Paused',
+      selectVideoPlaceholder: 'Please select a video file',
       originalImage: 'Original Image',
       edgeResult: 'Edge Detection Result',
       selectImagePlaceholder: 'Please select an image',
@@ -146,6 +253,8 @@ export const i18n = {
       selectedCount: '{count} images selected',
       startBatch: '🚀 Start Batch Processing',
       batchProcessingStatus: 'Processing...',
+      quickTestBSDS500: '⚡ Quick Test:BSDS500',
+      quickTestProcessing: 'BSDS500 test processing...',
       batchResults: 'Batch Processing Results',
       ods: 'ODS (Optimal Dataset Scale)',
       ois: 'OIS (Optimal Image Scale)',
@@ -155,7 +264,72 @@ export const i18n = {
       // Metrics labels (keep English)
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      // Evaluation Parameters (BSDS500 Standard)
+      evaluationParams: 'Evaluation Parameters (BSDS500 Standard)',
+      useTolerance: 'Use Boundary Matching Tolerance',
+      maxDist: 'Max Matching Distance (Image Diagonal Ratio)',
+      maxDistDesc: 'BSDS500 Standard: 0.0075, NYUD: 0.011',
+      useThinning: 'Boundary Thinning',
+      useThinningDesc: 'Thin boundaries to single-pixel width'
+    },
+    // Deep Learning Edge Detection Page
+    deepLearningEdgeDetection: {
+      title: 'Deep Learning Edge Detection',
+      subtitle: 'Support HED, PiDiNet and other deep learning-based edge detection algorithms',
+      algorithm: 'Edge Detection Algorithm:',
+      selectImage: '📁 Select Image',
+      selectVideo: '📹 Select Video',
+      startDetection: '✨ Start Edge Detection',
+      processing: 'Processing...',
+      saveImage: '💾 Save Edge Detection Result',
+      saveSuccess: 'Save successful',
+      saveError: 'Save failed',
+      videoMode: 'Video Mode',
+      imageMode: 'Image Mode',
+      videoPlaying: 'Video Playing',
+      videoPaused: 'Video Paused',
+      selectVideoPlaceholder: 'Please select a video file',
+      originalImage: 'Original Image',
+      edgeResult: 'Edge Detection Result',
+      selectImagePlaceholder: 'Please select an image',
+      edgeResultPlaceholder: 'Edge result will be displayed here',
+      metrics: 'Evaluation Metrics',
+      edgePixels: 'Non-zero Edge Pixels:',
+      precision: 'Precision',
+      recall: 'Recall',
+      f1Score: 'F1-Score',
+      hedDescription: 'HED Algorithm Description',
+      pidinetDescription: 'PiDiNet Algorithm Description',
+      hedModelStatus: 'HED Model Status',
+      pidinetModelStatus: 'PiDiNet Model Status',
+      hedModelLoaded: 'HED Model Loaded',
+      hedModelFailed: 'HED Model Failed',
+      pidinetModelLoaded: 'PiDiNet Model Loaded',
+      pidinetModelFailed: 'PiDiNet Model Failed',
+      // Batch Processing
+      batchProcessing: '📁 Batch Processing',
+      expandBatch: 'Expand Batch Processing',
+      collapseBatch: 'Collapse Batch Processing',
+      selectMultipleImages: '📁 Select Multiple Images (Multiple Selection)',
+      selectedCount: '{count} images selected',
+      startBatch: '🚀 Start Batch Processing',
+      batchProcessingStatus: 'Processing...',
+      quickTestBSDS500: '⚡ Quick Test: BSDS500',
+      quickTestProcessing: 'BSDS500 test processing...',
+      batchResults: 'Batch Processing Results',
+      ods: 'ODS (Optimal Dataset Scale)',
+      ois: 'OIS (Optimal Image Scale)',
+      threshold: 'Threshold',
+      prCurve: 'PR Curve',
+      processedResults: 'Processed Results ({count} images)',
+      // Evaluation Parameters (BSDS500 Standard)
+      evaluationParams: 'Evaluation Parameters (BSDS500 Standard)',
+      useTolerance: 'Use Boundary Matching Tolerance',
+      maxDist: 'Max Matching Distance (Image Diagonal Ratio)',
+      maxDistDesc: 'BSDS500 Standard: 0.0075, NYUD: 0.011',
+      useThinning: 'Boundary Thinning',
+      useThinningDesc: 'Thin boundaries to single-pixel width'
     },
     // Vehicle Detection Page
     vehicleDetection: {
@@ -185,11 +359,12 @@ export const i18n = {
     },
     // Documentation Page
     documentation: {
-      title: 'Documentation',
+      title: 'Algorithm Documentation',
+      subtitle: 'Click the links below to view detailed algorithm explanations',
       edgeDetectionDocs: 'Edge Detection Algorithm Details',
+      edgeDetectionDesc: 'Detailed introduction to classical edge detection algorithms including Sobel, Canny, Prewitt and their implementations',
       metricsDocs: 'Evaluation Metrics & ODS/OIS',
-      loading: 'Loading...',
-      loadError: 'Failed to load document'
+      metricsDesc: 'Introduction to edge detection evaluation metrics including Precision, Recall, F1-Score, and ODS/OIS calculation methods'
     },
     // Appearance Settings
     appearanceSettings: {
@@ -198,6 +373,21 @@ export const i18n = {
       containerColor: 'Container Color:',
       textColor: 'Text Color:',
       resetDefault: 'Reset to Default (Black & Gold)'
+    },
+    // Changelog
+    changelog: {
+      title: 'Changelog',
+      subtitle: 'Git Commit History',
+      refresh: '🔄 Refresh',
+      loading: 'Loading',
+      searchPlaceholder: 'Search commits...',
+      loadError: 'Failed to load',
+      noCommits: 'No commits found',
+      changedFiles: 'Changed files',
+      justNow: 'Just now',
+      minutesAgo: ' minutes ago',
+      hoursAgo: ' hours ago',
+      daysAgo: ' days ago'
     },
     // Common
     common: {
@@ -234,4 +424,8 @@ export function t(key, lang = null) {
   
   return value || key
 }
+
+
+
+
 

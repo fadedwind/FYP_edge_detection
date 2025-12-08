@@ -28,17 +28,34 @@ pip install flask flask-cors opencv-python numpy pillow
 
 ### 2. 启动后端 API
 
+**Windows:**
 ```bash
-python vehicle_detection_api.py
+# 方法1：使用启动脚本（推荐）
+start_backend.bat
+
+# 方法2：直接运行
+python edge_detection_api.py
 ```
 
-后端将在 `http://localhost:5000` 运行。
+**Linux/Mac:**
+```bash
+# 方法1：使用启动脚本
+chmod +x start_backend.sh
+./start_backend.sh
+
+# 方法2：直接运行
+python edge_detection_api.py
+```
+
+后端将在 `http://127.0.0.1:5000` 运行。
+
+**注意：** 如果遇到 `ECONNREFUSED` 错误，请确保后端服务已启动。
 
 ### 3. 安装前端依赖
 
 ```bash
 cd vue-frontend
-npm install
+
 ```
 
 ### 4. 启动前端开发服务器
@@ -136,4 +153,8 @@ npm run dev
 ## 📄 许可证
 
 与原项目保持一致。
+
+
+
+
 
