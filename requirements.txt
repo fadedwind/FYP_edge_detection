@@ -6,4 +6,6 @@ ultralytics
 timm
 # NOTE: torch installation may require a platform-specific wheel; see https://pytorch.org/ for the appropriate command for your CUDA/CPU environment.
 # Example (CPU): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# Example (CUDA 11.8): pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# PiDiNet requires torch and torchvision
 scipy

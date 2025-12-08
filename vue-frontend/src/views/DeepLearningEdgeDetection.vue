@@ -171,6 +171,138 @@
           </ul>
         </div>
       </div>
+
+      <!-- PiDiNet算法说明 -->
+      <div v-if="algorithm === 'PiDiNet'" class="info-section">
+        <div class="info-card">
+          <h3>💡 PiDiNet算法说明</h3>
+          <p>PiDiNet (Pixel Difference Networks) 是一种高效的边缘检测深度学习算法：</p>
+          <ul>
+            <li>使用像素差异卷积（PDC）进行边缘检测</li>
+            <li>相比传统方法更加高效和准确</li>
+            <li>能够检测细粒度的边缘特征</li>
+            <li>需要预训练模型文件（PyTorch格式）</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 批量处理区域 -->
+      <div class="batch-section">
+        <div class="batch-header">
+          <h3>{{ t('deepLearningEdgeDetection.batchProcessing') }}</h3>
+          <button class="nav-btn" @click="showBatchPanel = !showBatchPanel">
+            {{ showBatchPanel ? t('deepLearningEdgeDetection.collapseBatch') : t('deepLearningEdgeDetection.expandBatch') }}
+          </button>
+        </div>
+
+        <div v-if="showBatchPanel" class="batch-panel">
+          <div class="control-group">
+            <input
+              type="file"
+              id="dl-batch-file-input"
+              ref="batchFileInput"
+              @change="handleBatchFileSelect"
+              accept="image/*"
+              multiple
+              class="file-input"
+            />
+            <label for="dl-batch-file-input" class="file-label">{{ t('deepLearningEdgeDetection.selectMultipleImages') }}</label>
+            <span v-if="batchFiles.length > 0" class="file-count">{{ t('deepLearningEdgeDetection.selectedCount').replace('{count}', batchFiles.length) }}</span>
+          </div>
+
+          <!-- 评估参数设置 -->
+          <div class="evaluation-params-panel">
+            <div class="evaluation-params-header">
+              <h4>{{ t('deepLearningEdgeDetection.evaluationParams') }}</h4>
+            </div>
+            <div class="evaluation-params-grid">
+              <div class="evaluation-param-item">
+                <label>
+                  <input type="checkbox" v-model="useTolerance" />
+                  {{ t('deepLearningEdgeDetection.useTolerance') }}
+                </label>
+                <p class="param-desc">{{ t('deepLearningEdgeDetection.maxDistDesc') }}</p>
+              </div>
+              <div v-if="useTolerance" class="evaluation-param-item">
+                <label>{{ t('deepLearningEdgeDetection.maxDist') }}: {{ maxDist }}</label>
+                <input
+                  type="range"
+                  min="0.001"
+                  max="0.02"
+                  step="0.0005"
+                  v-model.number="maxDist"
+                  class="slider"
+                />
+                <span class="param-value">{{ maxDist.toFixed(4) }}</span>
+              </div>
+              <div class="evaluation-param-item">
+                <label>
+                  <input type="checkbox" v-model="useThinning" />
+                  {{ t('deepLearningEdgeDetection.useThinning') }}
+                </label>
+                <p class="param-desc">{{ t('deepLearningEdgeDetection.useThinningDesc') }}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="batch-buttons">
+            <button
+              @click="startBatchProcess"
+              :disabled="batchFiles.length === 0 || batchProcessing || bsds500Processing"
+              class="detect-btn"
+            >
+              {{ batchProcessing ? t('deepLearningEdgeDetection.batchProcessingStatus') : t('deepLearningEdgeDetection.startBatch') }}
+            </button>
+            
+            <button
+              @click="startBSDS500QuickTest"
+              :disabled="batchProcessing || bsds500Processing"
+              class="detect-btn bsds500-btn"
+            >
+              {{ bsds500Processing ? t('deepLearningEdgeDetection.quickTestProcessing') : t('deepLearningEdgeDetection.quickTestBSDS500') }}
+            </button>
+          </div>
+
+          <!-- 批量处理结果 -->
+          <div v-if="batchResults" class="batch-results">
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <h4>{{ t('deepLearningEdgeDetection.ods') }}</h4>
+                <p>{{ t('deepLearningEdgeDetection.threshold') }}: <strong>{{ batchResults.metrics.ods.threshold }}</strong></p>
+                <p>{{ t('deepLearningEdgeDetection.precision') }}: <strong>{{ batchResults.metrics.ods.precision }}</strong></p>
+                <p>{{ t('deepLearningEdgeDetection.recall') }}: <strong>{{ batchResults.metrics.ods.recall }}</strong></p>
+                <p>{{ t('deepLearningEdgeDetection.f1Score') }}: <strong>{{ batchResults.metrics.ods.f1 }}</strong></p>
+              </div>
+              <div class="metric-item">
+                <h4>{{ t('deepLearningEdgeDetection.ois') }}</h4>
+                <p>{{ t('deepLearningEdgeDetection.precision') }}: <strong>{{ batchResults.metrics.ois.precision }}</strong></p>
+                <p>{{ t('deepLearningEdgeDetection.recall') }}: <strong>{{ batchResults.metrics.ois.recall }}</strong></p>
+                <p>{{ t('deepLearningEdgeDetection.f1Score') }}: <strong>{{ batchResults.metrics.ois.f1 }}</strong></p>
+              </div>
+            </div>
+
+            <div v-if="batchResults.pr_curve" class="pr-curve-container">
+              <h4>{{ t('deepLearningEdgeDetection.prCurve') }}</h4>
+              <img :src="batchResults.pr_curve" :alt="t('deepLearningEdgeDetection.prCurve')" class="pr-curve-image" />
+            </div>
+
+            <div class="processed-images-list">
+              <h4>{{ t('deepLearningEdgeDetection.processedResults').replace('{count}', batchResults.processed_count) }}</h4>
+              <div class="images-grid">
+                <div v-for="img in batchResults.processed_images" :key="img.index" class="processed-image-item">
+                  <img :src="img.edge_image" :alt="`Processed image ${img.index}`" class="processed-image" />
+                  <p class="image-info">{{ img.filename }}</p>
+                  <div v-if="getImageMetrics(img.index)" class="image-metrics">
+                    <p>{{ t('deepLearningEdgeDetection.precision') }}: {{ getImageMetrics(img.index).precision }}</p>
+                    <p>{{ t('deepLearningEdgeDetection.recall') }}: {{ getImageMetrics(img.index).recall }}</p>
+                    <p>{{ t('deepLearningEdgeDetection.f1Score') }}: {{ getImageMetrics(img.index).f1 }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -185,7 +317,7 @@ export default {
   data() {
     return {
       algorithm: 'HED',
-      algoOptions: ['HED'],
+      algoOptions: ['HED', 'PiDiNet'],
       inputMode: 'image', // 'image' or 'video'
       selectedImage: null,
       selectedVideo: null,
@@ -195,7 +327,12 @@ export default {
       videoProcessing: false,
       videoFrameInterval: null,
       lastProcessedFrame: 0,
-      hasVideoEdgeResult: false
+      hasVideoEdgeResult: false,
+      showBatchPanel: false,
+      batchFiles: [],
+      batchProcessing: false,
+      batchResults: null,
+      bsds500Processing: false
     }
   },
   computed: {
@@ -419,6 +556,99 @@ export default {
         console.error('Save video frame error:', error)
         alert(this.t('deepLearningEdgeDetection.saveError') + ': ' + error.message)
       }
+    },
+    handleBatchFileSelect(event) {
+      const files = Array.from(event.target.files || [])
+      this.batchFiles = files
+    },
+    async startBatchProcess() {
+      if (this.batchFiles.length === 0) {
+        alert(this.t('deepLearningEdgeDetection.selectMultipleImages'))
+        return
+      }
+      
+      this.batchProcessing = true
+      this.batchResults = null
+      
+      try {
+        // 读取所有图片文件并转换为base64
+        const imagePromises = this.batchFiles.map(file => {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = (e) => resolve(e.target.result)
+            reader.onerror = reject
+            reader.readAsDataURL(file)
+          })
+        })
+        
+        const images = await Promise.all(imagePromises)
+        
+        // 调用批量处理 API
+        const response = await axios.post('/api/batch-process', {
+          images: images,
+          algorithm: this.algorithm,
+          blur: 7, // 深度学习算法不需要这些参数，但为了兼容性保留
+          sobel_ksize: 3,
+          canny_low: 100,
+          canny_high: 220,
+          use_tolerance: this.useTolerance,
+          max_dist: this.maxDist,
+          use_thinning: this.useThinning
+        })
+        
+        if (response.data.success) {
+          this.batchResults = response.data
+        } else {
+          alert('批量处理失败：' + (response.data.error || '未知错误'))
+        }
+      } catch (error) {
+        console.error('批量处理错误:', error)
+        alert('批量处理失败：' + (error.response?.data?.error || error.message))
+      } finally {
+        this.batchProcessing = false
+      }
+    },
+    getImageMetrics(index) {
+      if (!this.batchResults || !this.batchResults.per_image_results) {
+        return null
+      }
+      const result = this.batchResults.per_image_results.find(r => r.index === index)
+      if (!result) return null
+      return {
+        precision: result.best_precision || result.precision || 0,
+        recall: result.best_recall || result.recall || 0,
+        f1: result.best_f1 || result.f1 || 0
+      }
+    },
+    async startBSDS500QuickTest() {
+      this.bsds500Processing = true
+      this.batchResults = null
+      
+      try {
+        // 调用BSDS500快速测试API
+        const response = await axios.post('/api/bsds500-quick-test', {
+          algorithm: this.algorithm,
+          blur: 7, // 深度学习算法不需要这些参数，但为了兼容性保留
+          sobel_ksize: 3,
+          canny_low: 100,
+          canny_high: 220,
+          subset: 'val', // 默认使用验证集
+          use_tolerance: this.useTolerance,
+          max_dist: this.maxDist,
+          use_thinning: this.useThinning
+        })
+        
+        if (response.data.success) {
+          this.batchResults = response.data
+        } else {
+          alert('BSDS500快速测试失败：' + (response.data.error || '未知错误'))
+        }
+      } catch (error) {
+        console.error('BSDS500快速测试错误:', error)
+        alert('BSDS500快速测试失败：' + (error.response?.data?.error || error.message))
+      } finally {
+        this.bsds500Processing = false
+      }
     }
   },
   beforeUnmount() {
@@ -563,9 +793,226 @@ export default {
   margin-bottom: 8px;
 }
 
+.batch-section {
+  margin-top: 30px;
+  background: var(--container-color);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+  padding: 20px;
+}
+
+.batch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+  padding-bottom: 10px;
+}
+
+.batch-header h3 {
+  color: var(--text-color);
+  margin: 0;
+  font-size: 1.2em;
+}
+
+.evaluation-params-panel {
+  margin: 15px 0;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+}
+
+.evaluation-params-header {
+  margin-bottom: 15px;
+}
+
+.evaluation-params-header h4 {
+  color: var(--text-color);
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.evaluation-params-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.evaluation-param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.evaluation-param-item label {
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.evaluation-param-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.evaluation-param-item input[type="range"] {
+  width: 100%;
+  margin: 5px 0;
+}
+
+.param-desc {
+  color: var(--text-color);
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin: 0;
+  font-style: italic;
+}
+
+.param-value {
+  color: var(--text-color);
+  font-weight: bold;
+  margin-left: 10px;
+}
+
+.batch-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.batch-buttons {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.bsds500-btn {
+  background: rgba(212, 175, 55, 0.3);
+  border-color: rgba(212, 175, 55, 0.7);
+}
+
+.bsds500-btn:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.4);
+  border-color: var(--text-color);
+}
+
+.file-count {
+  color: var(--text-color);
+  margin-left: 10px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.batch-results {
+  margin-top: 20px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.metric-item {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 15px;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+}
+
+.metric-item h4 {
+  color: var(--text-color);
+  margin-bottom: 10px;
+  font-size: 1.1em;
+}
+
+.metric-item p {
+  color: var(--text-color);
+  margin: 5px 0;
+  opacity: 0.9;
+}
+
+.pr-curve-container {
+  margin: 20px 0;
+  text-align: center;
+}
+
+.pr-curve-container h4 {
+  color: var(--text-color);
+  margin-bottom: 15px;
+}
+
+.pr-curve-image {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 0;
+}
+
+.processed-images-list {
+  margin-top: 20px;
+}
+
+.processed-images-list h4 {
+  color: var(--text-color);
+  margin-bottom: 15px;
+}
+
+.images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.processed-image-item {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+}
+
+.processed-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.image-info {
+  color: var(--text-color);
+  font-size: 12px;
+  margin: 5px 0;
+  opacity: 0.8;
+}
+
+.image-metrics {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+.image-metrics p {
+  color: var(--text-color);
+  font-size: 11px;
+  margin: 3px 0;
+  opacity: 0.9;
+}
+
 @media (max-width: 768px) {
   .video-section {
     grid-template-columns: 1fr;
+  }
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+  .images-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 </style>

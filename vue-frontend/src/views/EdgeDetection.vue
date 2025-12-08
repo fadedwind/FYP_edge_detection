@@ -298,6 +298,41 @@
             <span v-if="batchFiles.length > 0" class="file-count">{{ t('edgeDetection.selectedCount').replace('{count}', batchFiles.length) }}</span>
           </div>
 
+          <!-- 评估参数设置 -->
+          <div class="evaluation-params-panel">
+            <div class="evaluation-params-header">
+              <h4>{{ t('edgeDetection.evaluationParams') }}</h4>
+            </div>
+            <div class="evaluation-params-grid">
+              <div class="evaluation-param-item">
+                <label>
+                  <input type="checkbox" v-model="useTolerance" />
+                  {{ t('edgeDetection.useTolerance') }}
+                </label>
+                <p class="param-desc">{{ t('edgeDetection.maxDistDesc') }}</p>
+              </div>
+              <div v-if="useTolerance" class="evaluation-param-item">
+                <label>{{ t('edgeDetection.maxDist') }}: {{ maxDist }}</label>
+                <input
+                  type="range"
+                  min="0.001"
+                  max="0.02"
+                  step="0.0005"
+                  v-model.number="maxDist"
+                  class="slider"
+                />
+                <span class="param-value">{{ maxDist.toFixed(4) }}</span>
+              </div>
+              <div class="evaluation-param-item">
+                <label>
+                  <input type="checkbox" v-model="useThinning" />
+                  {{ t('edgeDetection.useThinning') }}
+                </label>
+                <p class="param-desc">{{ t('edgeDetection.useThinningDesc') }}</p>
+              </div>
+            </div>
+          </div>
+
           <div class="batch-buttons">
             <button
               @click="startBatchProcess"
@@ -629,7 +664,10 @@ export default {
           blur: this.blur,
           sobel_ksize: this.sobelKsize,
           canny_low: this.cannyLow,
-          canny_high: this.cannyHigh
+          canny_high: this.cannyHigh,
+          use_tolerance: this.useTolerance,
+          max_dist: this.maxDist,
+          use_thinning: this.useThinning
         })
 
         if (response.data.success) {
@@ -671,7 +709,10 @@ export default {
           sobel_ksize: this.sobelKsize,
           canny_low: this.cannyLow,
           canny_high: this.cannyHigh,
-          subset: 'val' // 默认使用验证集
+          subset: 'val', // 默认使用验证集
+          use_tolerance: this.useTolerance,
+          max_dist: this.maxDist,
+          use_thinning: this.useThinning
         })
         
         if (response.data.success) {
@@ -940,6 +981,69 @@ export default {
   font-size: 12px;
   margin: 0;
   opacity: 0.8;
+}
+
+.evaluation-params-panel {
+  margin: 15px 0;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 0;
+}
+
+.evaluation-params-header {
+  margin-bottom: 15px;
+}
+
+.evaluation-params-header h4 {
+  color: var(--text-color);
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.evaluation-params-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.evaluation-param-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.evaluation-param-item label {
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.evaluation-param-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.evaluation-param-item input[type="range"] {
+  width: 100%;
+  margin: 5px 0;
+}
+
+.param-desc {
+  color: var(--text-color);
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin: 0;
+  font-style: italic;
+}
+
+.param-value {
+  color: var(--text-color);
+  font-weight: bold;
+  margin-left: 10px;
 }
 
 .mode-toggle {

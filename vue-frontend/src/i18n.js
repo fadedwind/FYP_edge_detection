@@ -66,12 +66,19 @@ export const i18n = {
       // 指标标签（保持英文）
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      // 评估参数（BSDS500标准）
+      evaluationParams: '评估参数（BSDS500标准）',
+      useTolerance: '使用边界匹配容差',
+      maxDist: '最大匹配距离（图像对角线比例）',
+      maxDistDesc: 'BSDS500标准：0.0075，NYUD：0.011',
+      useThinning: '边界细化（Thinning）',
+      useThinningDesc: '将边界细化为单像素宽度'
     },
     // 深度学习边缘检测页面
     deepLearningEdgeDetection: {
       title: '深度学习边缘检测',
-      subtitle: '支持 HED 等基于深度学习的边缘检测算法',
+      subtitle: '支持 HED、PiDiNet 等基于深度学习的边缘检测算法',
       algorithm: '边缘检测算法：',
       selectImage: '📁 选择图片',
       selectVideo: '📹 选择视频',
@@ -93,7 +100,38 @@ export const i18n = {
       edgePixels: '非零边缘像素数：',
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      hedDescription: 'HED算法说明',
+      pidinetDescription: 'PiDiNet算法说明',
+      hedModelStatus: 'HED模型状态',
+      pidinetModelStatus: 'PiDiNet模型状态',
+      hedModelLoaded: 'HED模型已加载',
+      hedModelFailed: 'HED模型加载失败',
+      pidinetModelLoaded: 'PiDiNet模型已加载',
+      pidinetModelFailed: 'PiDiNet模型加载失败',
+      // 批量处理
+      batchProcessing: '📁 批量处理',
+      expandBatch: '展开批量处理',
+      collapseBatch: '收起批量处理',
+      selectMultipleImages: '📁 选择多张图片（可多选）',
+      selectedCount: '已选择 {count} 张图片',
+      startBatch: '🚀 开始批量处理',
+      batchProcessingStatus: '处理中...',
+      quickTestBSDS500: '⚡ 快速测试:BSDS500',
+      quickTestProcessing: 'BSDS500测试处理中...',
+      batchResults: '批量处理结果',
+      ods: 'ODS (Optimal Dataset Scale)',
+      ois: 'OIS (Optimal Image Scale)',
+      threshold: '阈值',
+      prCurve: 'PR 曲线',
+      processedResults: '处理结果（共 {count} 张）',
+      // 评估参数（BSDS500标准）
+      evaluationParams: '评估参数（BSDS500标准）',
+      useTolerance: '使用边界匹配容差',
+      maxDist: '最大匹配距离（图像对角线比例）',
+      maxDistDesc: 'BSDS500标准：0.0075，NYUD：0.011',
+      useThinning: '边界细化（Thinning）',
+      useThinningDesc: '将边界细化为单像素宽度'
     },
     // 车辆识别页面
     vehicleDetection: {
@@ -226,12 +264,19 @@ export const i18n = {
       // Metrics labels (keep English)
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      // Evaluation Parameters (BSDS500 Standard)
+      evaluationParams: 'Evaluation Parameters (BSDS500 Standard)',
+      useTolerance: 'Use Boundary Matching Tolerance',
+      maxDist: 'Max Matching Distance (Image Diagonal Ratio)',
+      maxDistDesc: 'BSDS500 Standard: 0.0075, NYUD: 0.011',
+      useThinning: 'Boundary Thinning',
+      useThinningDesc: 'Thin boundaries to single-pixel width'
     },
     // Deep Learning Edge Detection Page
     deepLearningEdgeDetection: {
       title: 'Deep Learning Edge Detection',
-      subtitle: 'Support HED and other deep learning-based edge detection algorithms',
+      subtitle: 'Support HED, PiDiNet and other deep learning-based edge detection algorithms',
       algorithm: 'Edge Detection Algorithm:',
       selectImage: '📁 Select Image',
       selectVideo: '📹 Select Video',
@@ -253,7 +298,38 @@ export const i18n = {
       edgePixels: 'Non-zero Edge Pixels:',
       precision: 'Precision',
       recall: 'Recall',
-      f1Score: 'F1-Score'
+      f1Score: 'F1-Score',
+      hedDescription: 'HED Algorithm Description',
+      pidinetDescription: 'PiDiNet Algorithm Description',
+      hedModelStatus: 'HED Model Status',
+      pidinetModelStatus: 'PiDiNet Model Status',
+      hedModelLoaded: 'HED Model Loaded',
+      hedModelFailed: 'HED Model Failed',
+      pidinetModelLoaded: 'PiDiNet Model Loaded',
+      pidinetModelFailed: 'PiDiNet Model Failed',
+      // Batch Processing
+      batchProcessing: '📁 Batch Processing',
+      expandBatch: 'Expand Batch Processing',
+      collapseBatch: 'Collapse Batch Processing',
+      selectMultipleImages: '📁 Select Multiple Images (Multiple Selection)',
+      selectedCount: '{count} images selected',
+      startBatch: '🚀 Start Batch Processing',
+      batchProcessingStatus: 'Processing...',
+      quickTestBSDS500: '⚡ Quick Test: BSDS500',
+      quickTestProcessing: 'BSDS500 test processing...',
+      batchResults: 'Batch Processing Results',
+      ods: 'ODS (Optimal Dataset Scale)',
+      ois: 'OIS (Optimal Image Scale)',
+      threshold: 'Threshold',
+      prCurve: 'PR Curve',
+      processedResults: 'Processed Results ({count} images)',
+      // Evaluation Parameters (BSDS500 Standard)
+      evaluationParams: 'Evaluation Parameters (BSDS500 Standard)',
+      useTolerance: 'Use Boundary Matching Tolerance',
+      maxDist: 'Max Matching Distance (Image Diagonal Ratio)',
+      maxDistDesc: 'BSDS500 Standard: 0.0075, NYUD: 0.011',
+      useThinning: 'Boundary Thinning',
+      useThinningDesc: 'Thin boundaries to single-pixel width'
     },
     // Vehicle Detection Page
     vehicleDetection: {

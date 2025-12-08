@@ -62,3 +62,7 @@ AIchat/*.log
 # Ignore local model weights and large binary artifacts
 # Keep models/ in working copy for local testing, but don't push to remote
 models/
+
+# Ignore official implementation repositories (reference only)
+hed-hed/
+pidinet/
