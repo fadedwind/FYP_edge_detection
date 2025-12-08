@@ -161,13 +161,13 @@
       <!-- HED算法说明 -->
       <div v-if="algorithm === 'HED'" class="info-section">
         <div class="info-card">
-          <h3>💡 HED算法说明</h3>
-          <p>HED (Holistically-Nested Edge Detection) 是一种基于深度学习的边缘检测算法：</p>
+          <h3>💡 {{ t('deepLearningEdgeDetection.hedDescription') }}</h3>
+          <p>{{ t('deepLearningEdgeDetection.hedIntro') }}</p>
           <ul>
-            <li>使用VGG16作为骨干网络</li>
-            <li>通过多个侧输出层融合不同尺度的特征</li>
-            <li>能够检测更精细和连续的边缘</li>
-            <li>需要预训练模型文件（Caffe或PyTorch格式）</li>
+            <li>{{ t('deepLearningEdgeDetection.hedFeature1') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.hedFeature2') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.hedFeature3') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.hedFeature4') }}</li>
           </ul>
         </div>
       </div>
@@ -175,13 +175,13 @@
       <!-- PiDiNet算法说明 -->
       <div v-if="algorithm === 'PiDiNet'" class="info-section">
         <div class="info-card">
-          <h3>💡 PiDiNet算法说明</h3>
-          <p>PiDiNet (Pixel Difference Networks) 是一种高效的边缘检测深度学习算法：</p>
+          <h3>💡 {{ t('deepLearningEdgeDetection.pidinetDescription') }}</h3>
+          <p>{{ t('deepLearningEdgeDetection.pidinetIntro') }}</p>
           <ul>
-            <li>使用像素差异卷积（PDC）进行边缘检测</li>
-            <li>相比传统方法更加高效和准确</li>
-            <li>能够检测细粒度的边缘特征</li>
-            <li>需要预训练模型文件（PyTorch格式）</li>
+            <li>{{ t('deepLearningEdgeDetection.pidinetFeature1') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.pidinetFeature2') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.pidinetFeature3') }}</li>
+            <li>{{ t('deepLearningEdgeDetection.pidinetFeature4') }}</li>
           </ul>
         </div>
       </div>

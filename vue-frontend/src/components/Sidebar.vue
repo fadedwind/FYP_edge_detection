@@ -15,7 +15,11 @@
         :title="isCollapsed ? t('sidebar.classicalEdgeDetection') : ''"
       >
         <span class="icon">🖼️</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.classicalEdgeDetection') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.classicalEdgeDetection')"
+        >{{ t('sidebar.classicalEdgeDetection') }}</span>
       </button>
       
       <button 
@@ -25,8 +29,14 @@
         :title="isCollapsed ? t('sidebar.deepLearningEdgeDetection') : ''"
       >
         <span class="icon">🧠</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.deepLearningEdgeDetection') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.deepLearningEdgeDetection')"
+        >{{ t('sidebar.deepLearningEdgeDetection') }}</span>
       </button>
+      
+      <div class="divider" v-if="!isCollapsed"></div>
       
       <button 
         class="nav-item" 
@@ -35,7 +45,11 @@
         :title="isCollapsed ? t('sidebar.vehicleDetection') : ''"
       >
         <span class="icon">🚗</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.vehicleDetection') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.vehicleDetection')"
+        >{{ t('sidebar.vehicleDetection') }}</span>
       </button>
       
       <div class="divider" v-if="!isCollapsed"></div>
@@ -46,7 +60,11 @@
         :title="isCollapsed ? t('sidebar.appearanceSettings') : ''"
       >
         <span class="icon">🎨</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.appearanceSettings') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.appearanceSettings')"
+        >{{ t('sidebar.appearanceSettings') }}</span>
       </button>
       
       <button 
@@ -55,7 +73,11 @@
         :title="isCollapsed ? (getCurrentLang() === 'zh' ? 'English' : '中文') : ''"
       >
         <span class="icon">{{ getCurrentLang() === 'zh' ? '🇨🇳' : '🇺🇸' }}</span>
-        <span v-if="!isCollapsed" class="label">{{ getCurrentLang() === 'zh' ? 'English' : '中文' }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="getCurrentLang() === 'zh' ? 'English' : '中文'"
+        >{{ getCurrentLang() === 'zh' ? 'English' : '中文' }}</span>
       </button>
       
       <div class="divider" v-if="!isCollapsed"></div>
@@ -67,7 +89,11 @@
         :title="isCollapsed ? t('sidebar.documentation') : ''"
       >
         <span class="icon">📚</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.documentation') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.documentation')"
+        >{{ t('sidebar.documentation') }}</span>
       </button>
       
       <button 
@@ -77,7 +103,11 @@
         :title="isCollapsed ? t('sidebar.changelog') : ''"
       >
         <span class="icon">📝</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.changelog') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.changelog')"
+        >{{ t('sidebar.changelog') }}</span>
       </button>
       
       <a
@@ -88,7 +118,11 @@
         :title="isCollapsed ? t('sidebar.github') : ''"
       >
         <span class="icon">🐙</span>
-        <span v-if="!isCollapsed" class="label">{{ t('sidebar.github') }}</span>
+        <span 
+          v-if="!isCollapsed" 
+          class="label" 
+          :title="t('sidebar.github')"
+        >{{ t('sidebar.github') }}</span>
       </a>
     </nav>
   </div>
@@ -249,6 +283,7 @@ export default {
   text-align: left;
   font-size: 14px;
   font-weight: 500;
+  min-width: 0;
 }
 
 .nav-item:hover {
@@ -272,6 +307,12 @@ export default {
 .label {
   white-space: nowrap;
   transition: opacity 0.3s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  cursor: help;
 }
 
 .sidebar.collapsed .label {
