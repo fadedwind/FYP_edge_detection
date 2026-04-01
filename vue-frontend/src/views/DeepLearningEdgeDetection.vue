@@ -145,18 +145,7 @@
         </div>
       </div>
 
-      <!-- 指标展示 -->
-      <div class="result-section" v-if="metrics">
-        <div class="result-card">
-          <h3>{{ t('deepLearningEdgeDetection.metrics') }}</h3>
-          <div class="metrics-display">
-            <p>{{ t('deepLearningEdgeDetection.edgePixels') }}<strong>{{ metrics.edge_pixels }}</strong></p>
-            <p v-if="metrics.precision !== undefined">{{ t('deepLearningEdgeDetection.precision') }}：<strong>{{ metrics.precision }}</strong></p>
-            <p v-if="metrics.recall !== undefined">{{ t('deepLearningEdgeDetection.recall') }}：<strong>{{ metrics.recall }}</strong></p>
-            <p v-if="metrics.f1 !== undefined">{{ t('deepLearningEdgeDetection.f1Score') }}：<strong>{{ metrics.f1 }}</strong></p>
-          </div>
-        </div>
-      </div>
+      <!-- 指标展示已移除：单张图片的指标没有意义（因为没有真实边缘参考） -->
 
       <!-- HED算法说明 -->
       <div v-if="algorithm === 'HED'" class="info-section">
@@ -265,7 +254,8 @@
 
           <!-- 批量处理结果 -->
           <div v-if="batchResults" class="batch-results">
-            <div class="metrics-grid">
+            <!-- 指标显示（仅在有metrics时显示，即BSDS500快速测试） -->
+            <div v-if="batchResults.metrics" class="metrics-grid">
               <div class="metric-item">
                 <h4>{{ t('deepLearningEdgeDetection.ods') }}</h4>
                 <p>{{ t('deepLearningEdgeDetection.threshold') }}: <strong>{{ batchResults.metrics.ods.threshold }}</strong></p>
@@ -281,18 +271,21 @@
               </div>
             </div>
 
-            <div v-if="batchResults.pr_curve" class="pr-curve-container">
+            <!-- PR 曲线（仅在有metrics时显示，即BSDS500快速测试） -->
+            <div v-if="batchResults.metrics && batchResults.pr_curve" class="pr-curve-container">
               <h4>{{ t('deepLearningEdgeDetection.prCurve') }}</h4>
               <img :src="batchResults.pr_curve" :alt="t('deepLearningEdgeDetection.prCurve')" class="pr-curve-image" />
             </div>
 
+            <!-- 处理结果列表 -->
             <div class="processed-images-list">
               <h4>{{ t('deepLearningEdgeDetection.processedResults').replace('{count}', batchResults.processed_count) }}</h4>
               <div class="images-grid">
                 <div v-for="img in batchResults.processed_images" :key="img.index" class="processed-image-item">
                   <img :src="img.edge_image" :alt="`Processed image ${img.index}`" class="processed-image" />
                   <p class="image-info">{{ img.filename }}</p>
-                  <div v-if="getImageMetrics(img.index)" class="image-metrics">
+                  <!-- 单图指标（仅在有per_image_results时显示，即BSDS500快速测试） -->
+                  <div v-if="batchResults.metrics && getImageMetrics(img.index)" class="image-metrics">
                     <p>{{ t('deepLearningEdgeDetection.precision') }}: {{ getImageMetrics(img.index).precision }}</p>
                     <p>{{ t('deepLearningEdgeDetection.recall') }}: {{ getImageMetrics(img.index).recall }}</p>
                     <p>{{ t('deepLearningEdgeDetection.f1Score') }}: {{ getImageMetrics(img.index).f1 }}</p>
@@ -317,7 +310,7 @@ export default {
   data() {
     return {
       algorithm: 'HED',
-      algoOptions: ['HED', 'PiDiNet'],
+      algoOptions: ['HED', 'PiDiNet', 'RCF'],
       inputMode: 'image', // 'image' or 'video'
       selectedImage: null,
       selectedVideo: null,
@@ -332,7 +325,10 @@ export default {
       batchFiles: [],
       batchProcessing: false,
       batchResults: null,
-      bsds500Processing: false
+      bsds500Processing: false,
+      useTolerance: true,
+      maxDist: 0.0075,
+      useThinning: true
     }
   },
   computed: {
@@ -640,6 +636,14 @@ export default {
         
         if (response.data.success) {
           this.batchResults = response.data
+          // 调试：检查返回的数据
+          console.log('BSDS500快速测试返回数据:', {
+            hasMetrics: !!this.batchResults.metrics,
+            hasPrCurve: !!this.batchResults.pr_curve,
+            hasPerImageResults: !!this.batchResults.per_image_results,
+            processedCount: this.batchResults.processed_count,
+            processedImagesCount: this.batchResults.processed_images?.length
+          })
         } else {
           alert('BSDS500快速测试失败：' + (response.data.error || '未知错误'))
         }

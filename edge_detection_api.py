@@ -60,10 +60,12 @@ def get_hed_net():
         net = cv2.dnn.readNetFromCaffe(prototxt_path, caffemodel_path)
         _cached_hed_net = net
         _cached_hed_paths = paths
-        print(f'HED模型加载成功: {caffemodel_path}')
+        print(f'✅ HED模型加载成功: {caffemodel_path}')
+        print(f'   模型类型: Caffe (OpenCV DNN)')
+        print(f'   输入尺寸: 500x500')
         return _cached_hed_net
     except Exception as e:
-        print(f'HED模型加载失败: {e}')
+        print(f'❌ HED模型加载失败: {e}')
         _cached_hed_net = None
         _cached_hed_paths = None
         return None
@@ -123,7 +125,29 @@ EDGE_ALGORITHMS = {
     "color-canny": color_canny_edge_detection,
     "Sobel": sobel_edge_detection,
     "color-sobel": color_sobel_edge_detection,
+    "YOLOv8车辆检测": None,  # 特殊处理，不使用EDGE_ALGORITHMS
 }
+
+# YOLOv8检测器缓存
+_cached_yolo_detector = None
+
+def get_yolo_detector():
+    """返回缓存的YOLOv8检测器"""
+    global _cached_yolo_detector
+    if _cached_yolo_detector is not None:
+        return _cached_yolo_detector
+
+    try:
+        from vehicle_detection import VehicleDetector
+        _cached_yolo_detector = VehicleDetector(model_size='n', device='cpu')
+        print(f'✅ YOLOv8模型加载成功')
+        return _cached_yolo_detector
+    except ImportError:
+        print('❌ vehicle_detection模块未找到')
+        return None
+    except Exception as e:
+        print(f'❌ YOLOv8模型加载失败: {e}')
+        return None
 
 # ------------------------------------------------------------------------------
 # 工具函数
@@ -292,83 +316,96 @@ def compute_ois_from_per_image(per_image_best):
 
 def generate_pr_curve(precision_mean, recall_mean, algorithm, output_dir):
     """生成PR曲线并保存，返回base64编码的图片"""
-    precision_mean = np.clip(precision_mean, 0.0, 1.0)
-    recall_mean = np.clip(recall_mean, 0.0, 1.0)
-    
-    idxs = np.argsort(recall_mean)
-    recall_sorted = recall_mean[idxs]
-    precision_sorted = precision_mean[idxs]
-    
-    # 去重并取最大值（对于每个recall值，取最大的precision）
-    unique_recalls = []
-    max_precisions = []
-    for r, p in zip(recall_sorted, precision_sorted):
-        if len(unique_recalls) == 0 or r != unique_recalls[-1]:
-            unique_recalls.append(r)
-            max_precisions.append(p)
+    try:
+        precision_mean = np.clip(precision_mean, 0.0, 1.0)
+        recall_mean = np.clip(recall_mean, 0.0, 1.0)
+        
+        idxs = np.argsort(recall_mean)
+        recall_sorted = recall_mean[idxs]
+        precision_sorted = precision_mean[idxs]
+        
+        # 去重并取最大值（对于每个recall值，取最大的precision）
+        unique_recalls = []
+        max_precisions = []
+        for r, p in zip(recall_sorted, precision_sorted):
+            if len(unique_recalls) == 0 or r != unique_recalls[-1]:
+                unique_recalls.append(r)
+                max_precisions.append(p)
+            else:
+                if p > max_precisions[-1]:
+                    max_precisions[-1] = p
+        
+        recall_sorted = np.array(unique_recalls)
+        precision_sorted = np.array(max_precisions)
+        
+        # 过滤掉recall很小且precision很高的点（去掉左侧蓝色段）
+        valid_mask = ~((recall_sorted < 0.05) & (precision_sorted > 0.95))
+        if np.any(valid_mask):
+            recall_sorted = recall_sorted[valid_mask]
+            precision_sorted = precision_sorted[valid_mask]
+        
+        # 确保PR曲线以(1, precision_at_recall_1)结束
+        if len(recall_sorted) > 0 and recall_sorted[-1] < 1.0 - 1e-6:
+            recall_sorted = np.concatenate([recall_sorted, [1.0]])
+            precision_sorted = np.concatenate([precision_sorted, [precision_sorted[-1]]])
+        
+        # 插值生成平滑曲线
+        if len(recall_sorted) == 0 or recall_sorted.max() - recall_sorted.min() < 1e-6:
+            recall_fine = recall_sorted
+            precision_fine = precision_sorted
         else:
-            if p > max_precisions[-1]:
-                max_precisions[-1] = p
-    
-    recall_sorted = np.array(unique_recalls)
-    precision_sorted = np.array(max_precisions)
-    
-    # 过滤掉recall很小且precision很高的点（去掉左侧蓝色段）
-    valid_mask = ~((recall_sorted < 0.05) & (precision_sorted > 0.95))
-    if np.any(valid_mask):
-        recall_sorted = recall_sorted[valid_mask]
-        precision_sorted = precision_sorted[valid_mask]
-    
-    # 确保PR曲线以(1, precision_at_recall_1)结束
-    if len(recall_sorted) > 0 and recall_sorted[-1] < 1.0 - 1e-6:
-        recall_sorted = np.concatenate([recall_sorted, [1.0]])
-        precision_sorted = np.concatenate([precision_sorted, [precision_sorted[-1]]])
-    
-    # 插值生成平滑曲线
-    if len(recall_sorted) == 0 or recall_sorted.max() - recall_sorted.min() < 1e-6:
-        recall_fine = recall_sorted
-        precision_fine = precision_sorted
-    else:
-        recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
-        precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
-        # 对于PR曲线，应该使用单调递减的precision
-        for i in range(len(precision_fine) - 2, -1, -1):
-            precision_fine[i] = max(precision_fine[i], precision_fine[i + 1])
-    
-    # 绘制 PR 曲线
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(recall_fine, precision_fine, '-', linewidth=2, label='PR Curve')
-    ax.plot(recall_sorted, precision_sorted, 'o', markersize=3, alpha=0.6)
-    
-    # 绘制F1-score等值线
-    f1_values = [0.3, 0.5, 0.7]
-    recall_f1 = np.linspace(0.01, 0.99, 100)
-    for f1 in f1_values:
-        precision_f1 = f1 * recall_f1 / (2 * recall_f1 - f1)
-        valid_f1 = (precision_f1 >= 0) & (precision_f1 <= 1) & (recall_f1 > f1 / 2)
-        if np.any(valid_f1):
-            ax.plot(recall_f1[valid_f1], precision_f1[valid_f1], '--', 
-                   linewidth=1, alpha=0.5, color='gray', label=f'F1={f1}')
-    ax.set_xlabel('Recall')
-    ax.set_ylabel('Precision')
-    ax.set_title(f'PR Curve ({algorithm})')
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.grid(True, linestyle='--', alpha=0.4)
-    ax.legend()
-    
-    pr_path = os.path.join(output_dir, f"PR_curve_{algorithm}.png")
-    fig.tight_layout()
-    fig.savefig(pr_path, dpi=100)
-    plt.close(fig)
-    
-    # 读取 PR 曲线图片并转换为 base64
-    with open(pr_path, 'rb') as f:
-        pr_img_data = f.read()
-    pr_base64 = base64.b64encode(pr_img_data).decode()
-    pr_image_base64 = f"data:image/png;base64,{pr_base64}"
-    
-    return pr_image_base64
+            recall_fine = np.linspace(recall_sorted.min(), recall_sorted.max(), 512)
+            precision_fine = np.interp(recall_fine, recall_sorted, precision_sorted)
+            # 对于PR曲线，应该使用单调递减的precision
+            for i in range(len(precision_fine) - 2, -1, -1):
+                precision_fine[i] = max(precision_fine[i], precision_fine[i + 1])
+        
+        # 绘制 PR 曲线
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.plot(recall_fine, precision_fine, '-', linewidth=2, label='PR Curve')
+        ax.plot(recall_sorted, precision_sorted, 'o', markersize=3, alpha=0.6)
+        
+        # 绘制F1-score等值线
+        f1_values = [0.3, 0.5, 0.7]
+        recall_f1 = np.linspace(0.01, 0.99, 100)
+        for f1 in f1_values:
+            precision_f1 = f1 * recall_f1 / (2 * recall_f1 - f1)
+            valid_f1 = (precision_f1 >= 0) & (precision_f1 <= 1) & (recall_f1 > f1 / 2)
+            if np.any(valid_f1):
+                ax.plot(recall_f1[valid_f1], precision_f1[valid_f1], '--', 
+                       linewidth=1, alpha=0.5, color='gray', label=f'F1={f1}')
+        ax.set_xlabel('Recall')
+        ax.set_ylabel('Precision')
+        ax.set_title(f'PR Curve ({algorithm})')
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.grid(True, linestyle='--', alpha=0.4)
+        ax.legend()
+        
+        # 确保输出目录存在
+        os.makedirs(output_dir, exist_ok=True)
+        
+        pr_path = os.path.join(output_dir, f"PR_curve_{algorithm}.png")
+        fig.tight_layout()
+        fig.savefig(pr_path, dpi=100)
+        plt.close(fig)
+        
+        # 读取 PR 曲线图片并转换为 base64
+        if not os.path.exists(pr_path):
+            print(f'警告: PR曲线文件未生成: {pr_path}')
+            return None
+        
+        with open(pr_path, 'rb') as f:
+            pr_img_data = f.read()
+        pr_base64 = base64.b64encode(pr_img_data).decode()
+        pr_image_base64 = f"data:image/png;base64,{pr_base64}"
+        
+        return pr_image_base64
+    except Exception as e:
+        import traceback
+        print(f'生成PR曲线失败: {e}')
+        traceback.print_exc()
+        return None
 
 def save_batch_metrics_csv(per_image_best, ods_metrics, ois_metrics, algorithm, output_dir):
     """保存批量处理指标到CSV文件"""
@@ -662,16 +699,22 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
         net = get_hed_net()
         if net is not None:
             try:
+                original_h, original_w = img_for_processing.shape[:2]
                 blob = cv2.dnn.blobFromImage(img_for_processing, scalefactor=1.0, size=(500, 500),
                                             mean=(104.00698793, 116.66876762, 122.67891434),
                                             swapRB=False, crop=False)
                 net.setInput(blob)
                 out = net.forward()
                 out_map = out[0, 0, :, :]
+                # HED输出是sigmoid激活后的概率值[0,1]，映射到[0,255]
                 out_map = (out_map * 255.0).clip(0, 255).astype('uint8')
                 # HED Caffe输出是500x500，需要resize回原始尺寸
-                original_h, original_w = img_for_processing.shape[:2]
-                edge = cv2.resize(out_map, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
+                # 使用INTER_NEAREST避免边缘模糊
+                edge = cv2.resize(out_map, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
+                # HED输出均值很低（约7），需要使用较低的阈值
+                # 使用Otsu自适应阈值自动计算最佳阈值
+                _, edge = cv2.threshold(edge, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                print(f'🔹 HED推理完成: 原始尺寸({original_w}x{original_h}) → 500x500 → ({original_w}x{original_h}) (Otsu阈值)')
             except Exception as e:
                     print(f'HED (Caffe/OpenCV) 推理失败：{e}')
                     import traceback
@@ -717,18 +760,20 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
             else:
                 # 图像尺寸合适，直接使用
                 img_for_pidinet = img_for_processing.copy()
-            
+
             pidinet_map = run_pidinet(img_for_pidinet, model=None, device='cpu')
+            # PiDiNet输出是sigmoid概率值[0,1]，已映射到[0,255]
             # 确保输出是2D数组
             if len(pidinet_map.shape) > 2:
                 pidinet_map = pidinet_map.squeeze()
             if len(pidinet_map.shape) != 2:
                 raise ValueError(f"PiDiNet output shape is invalid: {pidinet_map.shape}")
-            
+
             # 如果输入图像被resize了，需要将输出resize回原始尺寸
+            # 使用INTER_NEAREST避免边缘模糊
             if img_for_pidinet.shape[:2] != (original_h, original_w):
-                pidinet_map = cv2.resize(pidinet_map, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
-            
+                pidinet_map = cv2.resize(pidinet_map, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
+
             # 保持原始尺寸
             edge = pidinet_map
             # 确保是uint8类型和2D数组
@@ -737,6 +782,56 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
                 edge = edge.squeeze()
         except Exception as e:
             print(f'PiDiNet 不可用或失败：{e}')
+            import traceback
+            traceback.print_exc()
+            original_h, original_w = img_for_processing.shape[:2]
+            edge = np.zeros((original_h, original_w), dtype=np.uint8)
+    elif algorithm == "RCF":
+        # RCF算法：使用更丰富的卷积特征（改进版）
+        try:
+            # 优先使用改进版RCF
+            try:
+                from rcf_improved import run_rcf_improved as run_rcf_func
+                rcf_version = "Improved"
+            except ImportError:
+                from rcf import run_rcf as run_rcf_func
+                rcf_version = "Original"
+
+            original_h, original_w = img_for_processing.shape[:2]
+
+            # RCF可以处理任意尺寸，但为了性能，如果图像太大（>1024），可以适当缩小
+            max_size = 1024
+            if original_h > max_size or original_w > max_size:
+                scale = min(max_size / original_h, max_size / original_w)
+                new_h, new_w = int(original_h * scale), int(original_w * scale)
+                img_for_rcf = cv2.resize(img_for_processing, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+            else:
+                img_for_rcf = img_for_processing.copy()
+
+            # 使用改进或原始RCF
+            if rcf_version == "Improved":
+                rcf_map = run_rcf_func(img_for_rcf, model=None, device='cpu')
+            else:
+                rcf_map = run_rcf_func(img_for_rcf, model=None, device='cpu')
+
+            # 确保输出是2D数组
+            if len(rcf_map.shape) > 2:
+                rcf_map = rcf_map.squeeze()
+            if len(rcf_map.shape) != 2:
+                raise ValueError(f"RCF output shape is invalid: {rcf_map.shape}")
+
+            # 如果输入图像被resize了，需要将输出resize回原始尺寸
+            if img_for_rcf.shape[:2] != (original_h, original_w):
+                rcf_map = cv2.resize(rcf_map, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
+
+            # RCF输出是概率值映射到0-255，使用Otsu阈值二值化
+            _, edge = cv2.threshold(rcf_map, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # 确保是uint8类型
+            edge = edge.astype(np.uint8)
+
+        except Exception as e:
+            print(f'RCF 不可用或失败：{e}')
             import traceback
             traceback.print_exc()
             original_h, original_w = img_for_processing.shape[:2]
@@ -761,40 +856,187 @@ def compute_edge_strength(img, algorithm, blur_ksize, sobel_ksize, canny_low=100
 def health_check():
     return jsonify({"status": "ok", "message": "Vehicle Detection API is running"})
 
+@app.route('/api/remove-background', methods=['POST'])
+def remove_background():
+    """智能抠图API"""
+    try:
+        data = request.get_json()
+
+        if 'image' not in data:
+            return jsonify({"error": "缺少图片数据"}), 400
+
+        method = data.get('method', 'auto')
+        edge_threshold = int(data.get('edge_threshold', 127))
+
+        # 解码图片
+        img_bgr = base64_to_image(data['image'])
+
+        # 保存临时图片
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_input:
+            tmp_input_path = tmp_input.name
+            cv2.imwrite(tmp_input_path, img_bgr)
+
+        # 生成输出路径
+        tmp_output_path = tmp_input_path.replace('.png', '_output.png')
+
+        try:
+            # 调用智能抠图函数
+            from smart_background_removal import smart_remove_background
+            result_img, mask = smart_remove_background(
+                tmp_input_path,
+                tmp_output_path,
+                method=method
+            )
+
+            # 计算前景占比
+            foreground_ratio = 0.0
+            if mask is not None:
+                foreground_ratio = float(np.sum(mask > 0) / mask.size * 100)
+
+            # 编码结果图像
+            result_base64 = image_to_base64(result_img)
+
+            # 编码mask（如果存在）
+            mask_base64 = None
+            if mask is not None:
+                # 将mask转换为3通道图像用于显示
+                mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                mask_base64 = image_to_base64(mask_bgr)
+
+            return jsonify({
+                "success": True,
+                "method": method,
+                "images": {
+                    "result": result_base64,
+                    "mask": mask_base64
+                },
+                "foreground_ratio": round(foreground_ratio, 2)
+            })
+
+        finally:
+            # 清理临时文件
+            try:
+                if os.path.exists(tmp_input_path):
+                    os.remove(tmp_input_path)
+                if os.path.exists(tmp_output_path):
+                    os.remove(tmp_output_path)
+            except:
+                pass
+
+    except ImportError as e:
+        return jsonify({"error": f"缺少依赖库: {str(e)}，请安装: pip install rembg"}), 500
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/algorithms', methods=['GET'])
+
+@app.route('/api/algorithms', methods=['GET'])
+def get_algorithms():
+    """获取可用的车辆识别算法列表"""
+    return jsonify({
+        "success": True,
+        "algorithms": list(EDGE_ALGORITHMS.keys())
+    })
+
 @app.route('/api/detect', methods=['POST'])
 def detect_vehicle():
     """车辆识别主接口"""
     try:
         data = request.get_json()
-        
+
         # 验证必需参数
         if 'image' not in data:
             return jsonify({"error": "缺少图片数据"}), 400
         if 'algorithm' not in data:
             return jsonify({"error": "缺少算法选择"}), 400
-        
+
         algorithm = data['algorithm']
         min_rectangularity = float(data.get('min_rectangularity', 0.2))
-        
+
         # 解码图片
         img_bgr = base64_to_image(data['image'])
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         gray_img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        
-        # 执行边缘检测
+
+        # 特殊处理：YOLOv8车辆检测
+        if algorithm == "YOLOv8车辆检测":
+            detector = get_yolo_detector()
+            if detector is None:
+                return jsonify({"error": "YOLOv8模型未加载，请检查ultralytics库是否安装"}), 500
+
+            try:
+                # 使用YOLOv8检测车辆
+                detections = detector.detect(img_bgr, conf_threshold=0.5)
+
+                # 绘制检测结果
+                marked_img = img_bgr.copy()
+                for det in detections:
+                    x1, y1, x2, y2 = det['bbox']
+                    class_name = det['class_name']
+                    conf = det['confidence']
+
+                    # 根据车辆类型选择颜色
+                    colors = {
+                        'bicycle': (0, 255, 0),    # 绿色
+                        'car': (255, 0, 0),        # 蓝色
+                        'motorcycle': (0, 0, 255), # 红色
+                        'bus': (255, 255, 0),      # 青色
+                        'truck': (255, 0, 255),    # 紫色
+                        'boat': (0, 255, 255)      # 黄色
+                    }
+                    color = colors.get(class_name, (128, 128, 128))
+
+                    # 绘制边界框
+                    cv2.rectangle(marked_img, (x1, y1), (x2, y2), color, 2)
+
+                    # 绘制标签
+                    label = f"{class_name} {conf:.2f}"
+                    (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                    cv2.rectangle(marked_img, (x1, y1 - text_h - 5), (x1 + text_w, y1), color, -1)
+                    cv2.putText(marked_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+                # 统计车辆类型
+                from vehicle_detection import count_vehicles
+                counts = count_vehicles(detections)
+
+                marked_img_base64 = image_to_base64(marked_img)
+
+                return jsonify({
+                    "success": True,
+                    "algorithm": "YOLOv8车辆检测",
+                    "classification": f"检测到 {len(detections)} 个车辆",
+                    "images": {
+                        "marked": marked_img_base64
+                    },
+                    "detections": detections,
+                    "vehicle_counts": counts,
+                    "total_vehicles": len(detections)
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"YOLOv8检测失败: {str(e)}"}), 500
+
+        # 原有的边缘检测算法
         if algorithm not in EDGE_ALGORITHMS:
             return jsonify({"error": f"不支持的算法: {algorithm}"}), 400
-        
+
         algo_func = EDGE_ALGORITHMS[algorithm]
+        if algo_func is None:
+            return jsonify({"error": f"算法 {algorithm} 不可用"}), 400
+
         if "color" in algorithm.lower() or "彩色" in algorithm:
             edge_img = algo_func(img_bgr)
         else:
             edge_img = algo_func(gray_img)
-        
+
         # 提取特征和分类
         area, aspect_ratio, rectangularity, main_color, vehicle_rect = extract_vehicle_features(img_bgr, edge_img)
         classification_result = classify_vehicle(area, aspect_ratio, rectangularity, main_color, min_rectangularity)
-        
+
         # 绘制标记矩形（如果识别成功）
         marked_img = img_bgr.copy()
         is_vehicle = "识别为：车辆" in classification_result
@@ -802,14 +1044,15 @@ def detect_vehicle():
             x, y, w, h = vehicle_rect
             cv2.rectangle(marked_img, (x, y), (x + w, y + h), (0, 0, 255), 3)
             cv2.putText(marked_img, "车辆", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        
+
         # 编码返回图片
         marked_img_base64 = image_to_base64(marked_img)
         edge_img_base64 = image_to_base64(edge_img)
-        
+
         # 返回结果
         return jsonify({
             "success": True,
+            "algorithm": algorithm,
             "classification": classification_result,
             "images": {
                 "marked": marked_img_base64,
@@ -823,6 +1066,8 @@ def detect_vehicle():
             }
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/edge-detect', methods=['POST'])
@@ -912,10 +1157,15 @@ def edge_detect():
                     net.setInput(blob)
                     out = net.forward()
                     out_map = out[0, 0, :, :]
+                    # HED输出是sigmoid激活后的概率值[0,1]，映射到[0,255]
                     out_map = (out_map * 255.0).clip(0, 255).astype('uint8')
                     # HED Caffe输出是500x500，需要resize回原始尺寸
+                    # 使用INTER_NEAREST避免边缘模糊
                     original_h, original_w = img_bgr.shape[:2]
-                    edge = cv2.resize(out_map, (original_w, original_h), interpolation=cv2.INTER_LINEAR)
+                    edge = cv2.resize(out_map, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
+                    # HED输出均值很低（约7），需要使用较低的阈值
+                    # 使用Otsu自适应阈值自动计算最佳阈值
+                    _, edge = cv2.threshold(edge, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 except Exception as e:
                     print(f'HED (Caffe/OpenCV) 推理失败：{e}')
                     # 回退到PyTorch实现
@@ -974,39 +1224,9 @@ def edge_detect():
             kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
             edge = cv2.dilate(edge, kernel, iterations=1)
 
-        # 计算指标：非零边缘像素数、Precision、Recall、F1
-        edge_pixels = int((edge > 0).sum())
-        
-        # 计算 Precision/Recall/F1（使用 Canny 作为参考）
-        reference = get_reference_edge(img_bgr)
-        # 确保 edge 和 reference 大小一致（应该已经是原始尺寸）
-        if edge.shape != reference.shape:
-            reference = cv2.resize(reference, (edge.shape[1], edge.shape[0]), interpolation=cv2.INTER_LINEAR)
-        
-        # 保存原始尺寸的edge用于指标计算
-        edge_for_metrics = edge.copy()
-        
         # 为了前端显示，resize到标准尺寸
         if edge.shape != (FRAME_HEIGHT, FRAME_WIDTH):
             edge = cv2.resize(edge, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_NEAREST)
-        # 使用原始尺寸计算指标
-        _, detected = cv2.threshold(edge_for_metrics, 127, 255, cv2.THRESH_BINARY)
-        _, ref_binary = cv2.threshold(reference, 127, 255, cv2.THRESH_BINARY)
-        
-        # 确保两个数组都是2D且大小一致
-        if len(detected.shape) != 2 or len(ref_binary.shape) != 2:
-            detected = detected.squeeze()
-            ref_binary = ref_binary.squeeze()
-        if detected.shape != ref_binary.shape:
-            ref_binary = cv2.resize(ref_binary, (detected.shape[1], detected.shape[0]), interpolation=cv2.INTER_NEAREST)
-        
-        TP = cv2.bitwise_and(detected, ref_binary).sum() // 255
-        FP = cv2.bitwise_and(detected, cv2.bitwise_not(ref_binary)).sum() // 255
-        FN = cv2.bitwise_and(cv2.bitwise_not(detected), ref_binary).sum() // 255
-        
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
         edge_b64 = image_to_base64(edge)
         return jsonify({
@@ -1014,12 +1234,7 @@ def edge_detect():
             "images": {
                 "edge": edge_b64
             },
-            "metrics": {
-                "edge_pixels": edge_pixels,
-                "precision": round(precision, 3),
-                "recall": round(recall, 3),
-                "f1": round(f1, 3)
-            }
+            "metrics": None  # 不计算指标（因为没有真实边缘参考）
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1064,96 +1279,52 @@ def batch_process():
             counter += 1
         os.makedirs(run_output_dir, exist_ok=True)
         
-        # 阈值列表
-        thresholds = list(range(0, 256, 1))
-        thr_TP_sum = np.zeros(len(thresholds), dtype=np.float64)
-        thr_FP_sum = np.zeros(len(thresholds), dtype=np.float64)
-        thr_FN_sum = np.zeros(len(thresholds), dtype=np.float64)
-        
-        per_image_best = []
+        # 批量处理（非BSDS500）：不计算指标，只处理图片
         processed_images = []
         
-        # 处理每张图片
+        # 处理每张图片（不计算指标）
         for idx, img_base64 in enumerate(data['images']):
             try:
                 img_bgr = base64_to_image(img_base64)
-                result = process_single_image_for_batch(
-                    img_bgr, algorithm, blur, sobel_ksize, canny_low, canny_high,
-                    thresholds, reference=None, 
-                    use_tolerance=use_tolerance, max_dist=max_dist, use_thinning=use_thinning
-                )
                 
-                # 累加阈值统计
-                thr_TP_sum += result['thr_TP']
-                thr_FP_sum += result['thr_FP']
-                thr_FN_sum += result['thr_FN']
+                # 直接使用compute_edge_strength获取边缘强度图，然后使用默认阈值
+                edge_strength = compute_edge_strength(img_bgr, algorithm, blur, sobel_ksize, canny_low, canny_high)
                 
-                # 记录单图最佳结果
-                per_image_best.append({
-                    "index": idx,
-                    "best_threshold": result['best_threshold'],
-                    "best_precision": result['best_precision'],
-                    "best_recall": result['best_recall'],
-                    "best_f1": result['best_f1']
-                })
+                # 使用默认阈值127生成边缘图（保持原始尺寸）
+                _, edge_image = cv2.threshold(edge_strength, 127, 255, cv2.THRESH_BINARY)
                 
-                # 保存最佳阈值下的边缘图
+                # 保存边缘图（保持原始尺寸）
                 edge_save_name = f"image_{idx}_edge.png"
                 edge_save_path = os.path.join(run_output_dir, edge_save_name)
-                cv2.imwrite(edge_save_path, result['edge_image'])
+                cv2.imwrite(edge_save_path, edge_image)
+                
+                # 为了前端显示，resize到标准尺寸（如果尺寸不一致）
+                original_h, original_w = edge_image.shape[:2]
+                if original_h != FRAME_HEIGHT or original_w != FRAME_WIDTH:
+                    edge_image_display = cv2.resize(edge_image, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_NEAREST)
+                else:
+                    edge_image_display = edge_image
                 
                 processed_images.append({
                     "index": idx,
-                    "edge_image": image_to_base64(result['edge_image']),
+                    "edge_image": image_to_base64(edge_image_display),
                     "filename": edge_save_name
                 })
             except Exception as e:
                 print(f'处理图片 {idx} 失败：', e)
                 continue
         
-        if len(per_image_best) == 0:
+        if len(processed_images) == 0:
             return jsonify({"error": "未成功处理任何图片"}), 400
         
-        # 计算指标
-        metrics_result = compute_metrics_from_thresholds(thr_TP_sum, thr_FP_sum, thr_FN_sum, thresholds)
-        ois_metrics = compute_ois_from_per_image(per_image_best)
-        
-        # 生成PR曲线
-        pr_image_base64 = generate_pr_curve(
-            metrics_result['precision_mean'], 
-            metrics_result['recall_mean'], 
-            algorithm, 
-            run_output_dir
-        )
-        
-        # 保存CSV
-        save_batch_metrics_csv(
-            per_image_best, 
-            metrics_result['ods'], 
-            ois_metrics, 
-            algorithm, 
-            run_output_dir
-        )
-        
+        # 非BSDS500批量处理：不返回指标和PR曲线
         return jsonify({
             "success": True,
-            "metrics": {
-                "ods": {
-                    "threshold": metrics_result['ods']['threshold'],
-                    "precision": round(metrics_result['ods']['precision'], 3),
-                    "recall": round(metrics_result['ods']['recall'], 3),
-                    "f1": round(metrics_result['ods']['f1'], 3)
-                },
-                "ois": {
-                    "precision": round(ois_metrics['precision'], 3),
-                    "recall": round(ois_metrics['recall'], 3),
-                    "f1": round(ois_metrics['f1'], 3)
-                }
-            },
-            "per_image_results": per_image_best,
-            "pr_curve": pr_image_base64,
+            "metrics": None,  # 不计算指标
+            "per_image_results": None,  # 不返回单图指标
+            "pr_curve": None,  # 不生成PR曲线
             "output_dir": run_output_dir,
-            "processed_count": len(per_image_best),
+            "processed_count": len(processed_images),
             "processed_images": processed_images
         })
         
@@ -1334,6 +1505,10 @@ def bsds500_quick_test():
             run_output_dir
         )
         
+        # 如果PR曲线生成失败，记录警告但不影响整体流程
+        if pr_image_base64 is None:
+            print(f'警告: PR曲线生成失败，但继续返回其他结果')
+        
         # 保存CSV
         save_batch_metrics_csv(
             per_image_best, 
@@ -1359,7 +1534,7 @@ def bsds500_quick_test():
                 }
             },
             "per_image_results": per_image_best,
-            "pr_curve": pr_image_base64,
+            "pr_curve": pr_image_base64,  # 可能为None，前端会处理
             "output_dir": run_output_dir,
             "processed_count": len(per_image_best),
             "processed_images": processed_images

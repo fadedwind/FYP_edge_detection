@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "WebSearch",
+      "mcp__web-search-prime__web_search_prime",
+      "mcp__zread__get_repo_structure",
+      "mcp__zread__read_file",
+      "mcp__web-reader__webReader",
+      "Bash(pip install:*)",
+      "Bash(gdown:*)",
+      "Bash(curl:*)",
+      "mcp__zread__search_doc",
+      "Bash(git add:*)"
+    ]
+  }
+}

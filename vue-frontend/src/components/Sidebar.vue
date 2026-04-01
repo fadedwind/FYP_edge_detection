@@ -38,20 +38,34 @@
       
       <div class="divider" v-if="!isCollapsed"></div>
       
-      <button 
-        class="nav-item" 
+      <button
+        class="nav-item"
         :class="{ active: $route.path === '/vehicle' }"
         @click="navigate('/vehicle')"
         :title="isCollapsed ? t('sidebar.vehicleDetection') : ''"
       >
         <span class="icon">🚗</span>
-        <span 
-          v-if="!isCollapsed" 
-          class="label" 
+        <span
+          v-if="!isCollapsed"
+          class="label"
           :title="t('sidebar.vehicleDetection')"
         >{{ t('sidebar.vehicleDetection') }}</span>
       </button>
-      
+
+      <button
+        class="nav-item"
+        :class="{ active: $route.path === '/smart-removal' }"
+        @click="navigate('/smart-removal')"
+        :title="isCollapsed ? t('sidebar.smartRemoval') : ''"
+      >
+        <span class="icon">✂️</span>
+        <span
+          v-if="!isCollapsed"
+          class="label"
+          :title="t('sidebar.smartRemoval')"
+        >{{ t('sidebar.smartRemoval') }}</span>
+      </button>
+
       <div class="divider" v-if="!isCollapsed"></div>
       
       <button 
@@ -209,11 +223,11 @@ export default {
   width: 220px;
   background: var(--container-color, #1a1a1a);
   border-right: 1px solid rgba(212, 175, 55, 0.2);
-  transition: width 0.3s ease, transform 0.3s ease;
+  transition: width 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
 }
 
 .sidebar.collapsed {
@@ -234,16 +248,21 @@ export default {
   color: var(--text-color, #d4af37);
   width: 32px;
   height: 32px;
-  border-radius: 0;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 18px;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   flex-shrink: 0;
 }
 
 .toggle-btn:hover {
   border-color: var(--text-color, #d4af37);
   background: rgba(212, 175, 55, 0.1);
+  transform: rotate(90deg);
+}
+
+.toggle-btn:active {
+  transform: rotate(90deg) scale(0.95);
 }
 
 .sidebar-title {
@@ -263,7 +282,7 @@ export default {
 
 .sidebar-nav {
   flex: 1;
-  padding: 10px;
+  padding: 12px;
   overflow-y: auto;
 }
 
@@ -273,22 +292,31 @@ export default {
   margin-bottom: 8px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 0;
+  border-radius: 6px;
   color: var(--text-color, #d4af37);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 12px;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   text-align: left;
   font-size: 14px;
   font-weight: 500;
   min-width: 0;
 }
 
+.nav-item:not(:last-child) {
+  margin-bottom: 8px;
+}
+
 .nav-item:hover {
   background: rgba(212, 175, 55, 0.1);
   border-color: rgba(212, 175, 55, 0.3);
+  transform: translateX(2px);
+}
+
+.nav-item:active {
+  transform: translateX(1px);
 }
 
 .nav-item.active {

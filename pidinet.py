@@ -434,6 +434,8 @@ def load_pidinet_model(weights_path: Optional[str] = None, device: Optional[str]
     pdc_types = ['cd', 'ad', 'rd', 'cv']
     pdcs = [createConvFunc(pdc_types[i % 4]) for i in range(16)]
     model = PiDiNet(inplane=inplane, pdcs=pdcs, dil=dil, sa=sa)
+
+    print(f'🔧 创建PiDiNet模型: inplane={inplane}, dil={dil}, sa={sa}')
     
     if os.path.exists(weights_path):
         try:
@@ -458,17 +460,18 @@ def load_pidinet_model(weights_path: Optional[str] = None, device: Optional[str]
                 loaded_ratio = loaded_count / total_count if total_count > 0 else 0
                 
                 if loaded_ratio >= 0.9:
-                    print(f"Successfully loaded PiDiNet model from {weights_path}")
-                    print(f"Loaded {loaded_count}/{total_count} parameters ({loaded_ratio*100:.1f}%)")
+                    print(f"✅ PiDiNet模型加载成功: {os.path.basename(weights_path)}")
+                    print(f"   参数: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
+                    print(f"   配置: inplane={inplane}, dil={dil}, sa={sa}")
                 elif loaded_ratio >= 0.5:
-                    print(f"Partially loaded PiDiNet model from {weights_path}")
-                    print(f"Loaded {loaded_count}/{total_count} parameters ({loaded_ratio*100:.1f}%)")
-                    print("⚠️  WARNING: Some weights may not match. Performance may be slightly degraded.")
+                    print(f"⚠️  PiDiNet模型部分加载: {os.path.basename(weights_path)}")
+                    print(f"   参数: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
+                    print(f"   ⚠️  警告: 性能可能略有下降")
                 else:
-                    print(f"⚠️  WARNING: Only loaded {loaded_count}/{total_count} parameters ({loaded_ratio*100:.1f}%)")
-                    print("❌ CRITICAL: Model architecture may not match!")
+                    print(f"❌ PiDiNet模型加载失败: 仅加载 {loaded_count}/{total_count} 参数 ({loaded_ratio*100:.1f}%)")
+                    print(f"   ❌ 关键: 模型架构可能不匹配!")
                     if missing_keys:
-                        print(f"Missing {len(missing_keys)} keys. Sample: {list(missing_keys)[:5]}")
+                        print(f"   缺少 {len(missing_keys)} 个参数. 示例: {list(missing_keys)[:5]}")
             except Exception as e:
                 print(f"ERROR: Failed to load PiDiNet weights: {e}")
                 print("CRITICAL: Using randomly initialized model - results will be inaccurate!")

@@ -61,7 +61,8 @@
           </div>
         </div>
 
-        <div class="image-box">
+        <!-- YOLOv8不显示边缘图 -->
+        <div class="image-box" v-if="selectedAlgorithm !== 'YOLOv8车辆检测'">
           <h3>{{ t('vehicleDetection.edgeResult') }}</h3>
           <div class="image-container">
             <img v-if="edgeImage" :src="edgeImage" :alt="t('vehicleDetection.edgeResult')" class="result-image" />
@@ -72,10 +73,52 @@
 
       <!-- 识别结果 -->
       <div class="result-section" v-if="result">
-        <div class="result-card" :class="{ 'success': isVehicle, 'failed': !isVehicle }">
+        <!-- YOLOv8检测结果 -->
+        <div class="result-card success" v-if="selectedAlgorithm === 'YOLOv8车辆检测'">
           <h3>{{ t('vehicleDetection.result') }}</h3>
           <p class="result-text">{{ result }}</p>
-          
+
+          <!-- 车辆统计 -->
+          <div class="features" v-if="vehicleCounts && Object.keys(vehicleCounts).length > 0">
+            <h4>车辆类型统计</h4>
+            <ul>
+              <li v-for="(count, type) in vehicleCounts" :key="type">
+                <strong>{{ type }}</strong>: {{ count }} 辆
+              </li>
+            </ul>
+          </div>
+
+          <!-- 详细检测列表 -->
+          <div class="detection-list" v-if="detections && detections.length > 0">
+            <h4>检测详情</h4>
+            <div class="detection-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>序号</th>
+                    <th>类型</th>
+                    <th>置信度</th>
+                    <th>位置</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(det, index) in detections" :key="index">
+                    <td>{{ index + 1 }}</td>
+                    <td><strong>{{ det.class_name }}</strong></td>
+                    <td>{{ (det.confidence * 100).toFixed(1) }}%</td>
+                    <td>[{{ det.bbox.join(', ') }}]</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 边缘检测结果 -->
+        <div class="result-card" :class="{ 'success': isVehicle, 'failed': !isVehicle }" v-else>
+          <h3>{{ t('vehicleDetection.result') }}</h3>
+          <p class="result-text">{{ result }}</p>
+
           <div class="features" v-if="features">
             <h4>{{ t('vehicleDetection.features') }}</h4>
             <ul>
@@ -120,7 +163,11 @@ export default {
       isVehicle: false,
       features: null,
       algorithms: [],
-      processing: false
+      processing: false,
+      // YOLOv8检测结果
+      detections: null,
+      vehicleCounts: null,
+      totalVehicles: 0
     }
   },
   computed: {
@@ -153,7 +200,8 @@ export default {
           'Canny边缘检测',
           'color-canny',
           'Sobel边缘检测',
-          'color-sobel'
+          'color-sobel',
+          'YOLOv8车辆检测'
         ]
       }
     },
@@ -176,7 +224,7 @@ export default {
         alert('请先选择图片！')
         return
       }
-      
+
       this.processing = true
       try {
         const response = await axios.post('/api/detect', {
@@ -184,13 +232,29 @@ export default {
           algorithm: this.selectedAlgorithm,
           min_rectangularity: this.minRectangularity
         })
-        
+
         if (response.data.success) {
           this.markedImage = response.data.images.marked
-          this.edgeImage = response.data.images.edge
-          this.result = response.data.result
-          this.isVehicle = response.data.is_vehicle
-          this.features = response.data.features
+
+          // YOLOv8特殊处理
+          if (this.selectedAlgorithm === 'YOLOv8车辆检测') {
+            this.edgeImage = null  // YOLOv8不生成边缘图
+            this.result = response.data.classification
+            this.detections = response.data.detections || []
+            this.vehicleCounts = response.data.vehicle_counts || {}
+            this.totalVehicles = response.data.total_vehicles || 0
+            this.features = null
+            this.isVehicle = this.totalVehicles > 0
+          } else {
+            // 边缘检测算法
+            this.edgeImage = response.data.images.edge
+            this.result = response.data.classification
+            this.isVehicle = response.data.is_vehicle
+            this.features = response.data.features
+            this.detections = null
+            this.vehicleCounts = null
+            this.totalVehicles = 0
+          }
         } else {
           alert('识别失败：' + (response.data.error || '未知错误'))
         }
@@ -217,6 +281,45 @@ export default {
 
 <style scoped>
 @import '../styles/common.css';
+
+.detection-list {
+  margin-top: 1rem;
+}
+
+.detection-table {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
+.detection-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.detection-table thead {
+  background-color: rgba(212, 175, 55, 0.2);
+}
+
+.detection-table th,
+.detection-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detection-table th {
+  font-weight: 600;
+  color: #D4AF37;
+}
+
+.detection-table tbody tr:hover {
+  background-color: rgba(212, 175, 55, 0.1);
+}
+
+.detection-table tbody tr:last-child td {
+  border-bottom: none;
+}
 </style>
 
 
