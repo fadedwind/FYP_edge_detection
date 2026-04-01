@@ -75,14 +75,14 @@ export default {
 .app-container {
   display: flex;
   min-height: 100vh;
-  background: #0a0a0a;
+  background: linear-gradient(135deg, #0a0a0a 0%, #111111 50%, #0d0d0d 100%);
 }
 
 .main-wrapper {
   flex: 1;
   margin-left: 220px;
   transition: margin-left 0.3s ease;
-  background: #0a0a0a;
+  background: transparent;
   min-height: 100vh;
 }
 

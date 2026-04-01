@@ -261,18 +261,7 @@
         </div>
       </div>
 
-      <!-- 指标展示（可选） -->
-      <div class="result-section" v-if="metrics && !batchResults">
-        <div class="result-card">
-          <h3>{{ t('edgeDetection.metrics') }}</h3>
-          <div class="metrics-display">
-            <p>{{ t('edgeDetection.edgePixels') }}<strong>{{ metrics.edge_pixels }}</strong></p>
-            <p v-if="metrics.precision !== undefined">{{ t('edgeDetection.precision') }}：<strong>{{ metrics.precision }}</strong></p>
-            <p v-if="metrics.recall !== undefined">{{ t('edgeDetection.recall') }}：<strong>{{ metrics.recall }}</strong></p>
-            <p v-if="metrics.f1 !== undefined">{{ t('edgeDetection.f1Score') }}：<strong>{{ metrics.f1 }}</strong></p>
-          </div>
-        </div>
-      </div>
+      <!-- 指标展示已移除：单张图片的指标没有意义（因为没有真实边缘参考） -->
 
       <!-- 批量处理区域 -->
       <div class="batch-section">
@@ -355,7 +344,14 @@
           <div v-if="batchResults" class="batch-results">
             <div class="result-card">
               <h3>{{ t('edgeDetection.batchResults') }}</h3>
-              <div class="metrics-grid">
+              
+              <!-- 调试信息（开发时可见） -->
+              <div v-if="!batchResults.metrics" style="color: orange; padding: 10px; background: rgba(255,165,0,0.1); margin-bottom: 10px;">
+                提示：这是普通批量处理，不显示指标（仅BSDS500快速测试显示指标）
+              </div>
+              
+              <!-- 指标显示（仅在有metrics时显示，即BSDS500快速测试） -->
+              <div v-if="batchResults.metrics" class="metrics-grid">
                 <div class="metric-item">
                   <h4>{{ t('edgeDetection.ods') }}</h4>
                   <p>{{ t('edgeDetection.threshold') }}: <strong>{{ batchResults.metrics.ods.threshold }}</strong></p>
@@ -371,8 +367,8 @@
                 </div>
               </div>
 
-              <!-- PR 曲线 -->
-              <div v-if="batchResults.pr_curve" class="pr-curve-container">
+              <!-- PR 曲线（仅在有metrics时显示，即BSDS500快速测试） -->
+              <div v-if="batchResults.metrics && batchResults.pr_curve" class="pr-curve-container">
                 <h4>{{ t('edgeDetection.prCurve') }}</h4>
                 <img :src="batchResults.pr_curve" :alt="t('edgeDetection.prCurve')" class="pr-curve-image" />
               </div>
@@ -383,11 +379,13 @@
                 <div class="images-grid">
                   <div v-for="img in batchResults.processed_images" :key="img.index" class="processed-image-item">
                     <img :src="img.edge_image" :alt="img.filename" class="processed-thumbnail" />
-                    <p class="image-metrics">
-                      {{ t('edgeDetection.precision').substring(0, 1) }}: {{ getImageMetrics(img.index).precision }} | 
+                    <p class="image-info">{{ img.filename }}</p>
+                    <!-- 单图指标（仅在有per_image_results时显示，即BSDS500快速测试） -->
+                    <div v-if="batchResults.metrics && getImageMetrics(img.index)" class="image-metrics">
+                      <p>{{ t('edgeDetection.precision').substring(0, 1) }}: {{ getImageMetrics(img.index).precision }} | 
                       {{ t('edgeDetection.recall').substring(0, 1) }}: {{ getImageMetrics(img.index).recall }} | 
-                      F1: {{ getImageMetrics(img.index).f1 }}
-                    </p>
+                      F1: {{ getImageMetrics(img.index).f1 }}</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -431,7 +429,10 @@ export default {
       videoProcessing: false,
       videoFrameInterval: null,
       lastProcessedFrame: 0,
-      hasVideoEdgeResult: false
+      hasVideoEdgeResult: false,
+      useTolerance: true,
+      maxDist: 0.0075,
+      useThinning: true
     }
   },
   computed: {
@@ -717,6 +718,16 @@ export default {
         
         if (response.data.success) {
           this.batchResults = response.data
+          // 调试：检查返回的数据
+          console.log('BSDS500快速测试返回数据:', {
+            hasMetrics: !!this.batchResults.metrics,
+            hasPrCurve: !!this.batchResults.pr_curve,
+            hasPerImageResults: !!this.batchResults.per_image_results,
+            processedCount: this.batchResults.processed_count,
+            processedImagesCount: this.batchResults.processed_images?.length,
+            metrics: this.batchResults.metrics,
+            prCurve: this.batchResults.pr_curve ? '存在' : '不存在'
+          })
         } else {
           alert('BSDS500快速测试失败：' + (response.data.error || '未知错误'))
         }

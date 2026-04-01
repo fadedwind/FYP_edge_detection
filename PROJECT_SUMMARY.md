@@ -259,3 +259,6 @@ vue-frontend/
 
 This project is a comprehensive edge detection and vehicle recognition web application using a frontend-backend separation architecture. The frontend is built with Vue 3, providing a modern user interface supporting multiple input modes, real-time processing, batch operations, and result visualization. The backend uses Flask to provide RESTful API services, supporting multiple algorithms, batch processing, dataset evaluation, and Git log queries. The entire system features excellent user experience, comprehensive error handling, and flexible configuration options.
 
+
+
+
