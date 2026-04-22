@@ -435,43 +435,43 @@ def load_pidinet_model(weights_path: Optional[str] = None, device: Optional[str]
     pdcs = [createConvFunc(pdc_types[i % 4]) for i in range(16)]
     model = PiDiNet(inplane=inplane, pdcs=pdcs, dil=dil, sa=sa)
 
-    print(f'🔧 创建PiDiNet模型: inplane={inplane}, dil={dil}, sa={sa}')
-    
+    print(f'[PiDiNet] Creating model: inplane={inplane}, dil={dil}, sa={sa}')
+
     if os.path.exists(weights_path):
         try:
-            print(f"Loading PiDiNet model from: {weights_path}")
+            print(f"[PiDiNet] Loading model from: {weights_path}")
             state = torch.load(weights_path, map_location=device)
             if isinstance(state, dict) and 'state_dict' in state:
                 state = state['state_dict']
             elif isinstance(state, dict) and 'model' in state:
                 state = state['model']
-            
+
             # 移除module.前缀
             new_state = {}
             for k, v in state.items():
                 nk = k.replace('module.', '')
                 new_state[nk] = v
-            
+
             # 加载权重
             try:
                 missing_keys, unexpected_keys = model.load_state_dict(new_state, strict=False)
                 loaded_count = len(new_state.keys()) - len(missing_keys)
                 total_count = len(new_state.keys())
                 loaded_ratio = loaded_count / total_count if total_count > 0 else 0
-                
+
                 if loaded_ratio >= 0.9:
-                    print(f"✅ PiDiNet模型加载成功: {os.path.basename(weights_path)}")
-                    print(f"   参数: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
-                    print(f"   配置: inplane={inplane}, dil={dil}, sa={sa}")
+                    print(f"[PiDiNet] Model loaded successfully: {os.path.basename(weights_path)}")
+                    print(f"   Params: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
+                    print(f"   Config: inplane={inplane}, dil={dil}, sa={sa}")
                 elif loaded_ratio >= 0.5:
-                    print(f"⚠️  PiDiNet模型部分加载: {os.path.basename(weights_path)}")
-                    print(f"   参数: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
-                    print(f"   ⚠️  警告: 性能可能略有下降")
+                    print(f"[PiDiNet] Model partially loaded: {os.path.basename(weights_path)}")
+                    print(f"   Params: {loaded_count}/{total_count} ({loaded_ratio*100:.1f}%)")
+                    print(f"   WARNING: Performance may be slightly degraded")
                 else:
-                    print(f"❌ PiDiNet模型加载失败: 仅加载 {loaded_count}/{total_count} 参数 ({loaded_ratio*100:.1f}%)")
-                    print(f"   ❌ 关键: 模型架构可能不匹配!")
+                    print(f"[PiDiNet] Model load FAILED: only {loaded_count}/{total_count} params ({loaded_ratio*100:.1f}%)")
+                    print(f"   CRITICAL: Model architecture may not match!")
                     if missing_keys:
-                        print(f"   缺少 {len(missing_keys)} 个参数. 示例: {list(missing_keys)[:5]}")
+                        print(f"   Missing {len(missing_keys)} params. Examples: {list(missing_keys)[:5]}")
             except Exception as e:
                 print(f"ERROR: Failed to load PiDiNet weights: {e}")
                 print("CRITICAL: Using randomly initialized model - results will be inaccurate!")

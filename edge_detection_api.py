@@ -97,20 +97,25 @@ def color_canny_edge_detection(rgb_img):
     return color_edges
 
 def sobel_edge_detection(gray_img):
-    """Sobel边缘检测"""
-    sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=3)
-    sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=3)
+    """Sobel边缘检测：适合车身边缘清晰的图片"""
+    sobel_x = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=5)
+    sobel_y = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=5)
+    sobel_x = np.uint8(np.absolute(sobel_x))
+    sobel_y = np.uint8(np.absolute(sobel_y))
     sobel_edges = cv2.bitwise_or(sobel_x, sobel_y)
     kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     sobel_edges = cv2.morphologyEx(sobel_edges, cv2.MORPH_CLOSE, kernel_close)
     return sobel_edges
 
 def color_sobel_edge_detection(rgb_img):
-    """彩色Sobel边缘检测"""
+    """彩色Sobel边缘检测：适合复杂背景下的彩色车辆"""
+    r, g, b = cv2.split(rgb_img)
+
     def sobel_single_channel(channel):
-        sobel_x = cv2.Sobel(channel, cv2.CV_64F, 1, 0, ksize=3)
-        sobel_y = cv2.Sobel(channel, cv2.CV_64F, 0, 1, ksize=3)
+        sobel_x = cv2.Sobel(channel, cv2.CV_64F, 1, 0, ksize=5)
+        sobel_y = cv2.Sobel(channel, cv2.CV_64F, 0, 1, ksize=5)
         return np.uint8(np.absolute(cv2.bitwise_or(sobel_x, sobel_y)))
+
     r_edges = sobel_single_channel(r)
     g_edges = sobel_single_channel(g)
     b_edges = sobel_single_channel(b)
@@ -1224,9 +1229,8 @@ def edge_detect():
             kernel = np.ones((dilate_ksize, dilate_ksize), np.uint8)
             edge = cv2.dilate(edge, kernel, iterations=1)
 
-        # 为了前端显示，resize到标准尺寸
-        if edge.shape != (FRAME_HEIGHT, FRAME_WIDTH):
-            edge = cv2.resize(edge, (FRAME_WIDTH, FRAME_HEIGHT), interpolation=cv2.INTER_NEAREST)
+        # 保持原始尺寸，前端通过CSS自适应显示
+        # 不再强制resize到640x480，避免与原图尺寸不一致
 
         edge_b64 = image_to_base64(edge)
         return jsonify({
@@ -1361,17 +1365,28 @@ def classify_vehicle(area, aspect_ratio, rectangularity, main_color, min_rectang
     """车辆分类规则：多特征组合判断（使用可调节矩形度阈值）"""
     r, g, b = main_color
     total_brightness = (r + g + b) / 3
-    
+
+    # 过滤条件（必须满足以下所有基础条件）
     if area < 5000:
         return "未识别（轮廓过小，非车辆）"
     if total_brightness < 40:
         return "未识别（图片过暗，无法判断）"
     if rectangularity < min_rectangularity:
-        return "未识别（矩形度不足，形状不匹配）"
-    if aspect_ratio < 0.8 or aspect_ratio > 3.5:
-        return "未识别（长宽比异常，非车辆比例）"
-    
-    return "识别为：车辆"
+        return f"未识别（轮廓不规则，矩形度{rectangularity:.2f} < {min_rectangularity:.2f}）"
+
+    # 车辆长宽比判断（适配侧面/正面视角）
+    if (aspect_ratio >= 2.0 and aspect_ratio <= 5.0) or (aspect_ratio >= 1.2 and aspect_ratio < 2.0):
+        # 进一步过滤：车辆主色调通常单一（R/G/B中有一个通道显著高于其他两个）
+        if (r > g + 30 and r > b + 30) or (g > r + 30 and g > b + 30) or (b > r + 30 and b > g + 30):
+            return "识别为：车辆"
+        else:
+            # 允许部分颜色均匀的车辆（如白色、银色）
+            if abs(r - g) < 20 and abs(g - b) < 20:
+                return "识别为：车辆"
+            else:
+                return "未识别（颜色特征不符合车辆）"
+    else:
+        return f"未识别（长宽比{aspect_ratio:.1f}，不符合车辆范围）"
 
 # ------------------------------------------------------------------------------
 # 添加 HED 支持到 compute_edge_strength
